@@ -73,8 +73,11 @@ export function StatusBar() {
         <StatusDot healthy={health?.status === "healthy"} />
       </span>
       <span className="flex items-center gap-1.5">
-        {health?.database?.type ?? "DB"} / {health?.database?.name ?? "unknown"}
+        <Chip size="sm">{health?.database?.type ?? "DB"} / {health?.database?.name ?? "unknown"}</Chip>
         <StatusDot healthy={health?.database?.status === "healthy"} />
+      </span>
+      <span className="flex items-center gap-1.5">
+        <Chip size="sm">migration {health?.database?.alembic_revision ?? "?"}</Chip>
       </span>
 
       <span className="ml-auto flex items-center gap-3">
