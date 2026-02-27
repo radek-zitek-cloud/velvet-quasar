@@ -1,0 +1,22 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Logs
+logs/*.log
+
+# Node
+node_modules/
+.next/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Serena
+.serena/
