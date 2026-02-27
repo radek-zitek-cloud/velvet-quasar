@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import run_migrations
 from app.logging_setup import setup_logging
+from app.auth.routes import router as auth_router
 from app.routes import router
 
 logger = logging.getLogger(__name__)
@@ -27,10 +28,11 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 app.include_router(router)
+app.include_router(auth_router)
 
 
 @app.middleware("http")

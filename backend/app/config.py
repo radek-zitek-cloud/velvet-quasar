@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "debug"
     database_url: str = f"sqlite+aiosqlite:///{DATA_DIR / 'velvet_quasar.db'}"
+    jwt_secret: str = "change-me-in-production"
 
     model_config = {
         "env_file": str(PROJECT_ROOT / ".env"),
