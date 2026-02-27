@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useAuth } from "@/lib/AuthContext";
+import { LoginPage } from "./LoginPage";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { NavSidebar } from "./NavSidebar";
@@ -12,8 +14,21 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: AppShellProps) {
+  const { user, loading } = useAuth();
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">

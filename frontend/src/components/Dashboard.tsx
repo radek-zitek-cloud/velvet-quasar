@@ -12,6 +12,7 @@ import {
   Separator,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
+import { useAuth } from "@/lib/AuthContext";
 
 // ── Mock Data ──────────────────────────────────────────────────────────
 
@@ -304,6 +305,7 @@ function getGreeting() {
 // ── Main Dashboard ─────────────────────────────────────────────────────
 
 export function Dashboard() {
+  const { user } = useAuth();
   const [liveUpdates, setLiveUpdates] = useState(true);
 
   return (
@@ -315,7 +317,7 @@ export function Dashboard() {
           <h1 className="text-2xl font-bold tracking-tight mt-1">
             {getGreeting()},{" "}
             <span className="bg-linear-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
-              Jane
+              {user?.first_name ?? "there"}
             </span>
           </h1>
           <p className="text-sm text-muted mt-0.5">
