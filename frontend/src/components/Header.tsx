@@ -52,7 +52,7 @@ export function Header({
           </button>
         </NavbarItem>
         <NavbarBrand>
-          <p className="text-xl font-extrabold tracking-tight bg-gradient-to-r from-purple-500 to-cyan-400 bg-clip-text text-transparent">
+          <p className="text-xl font-extrabold tracking-tight bg-linear-to-r from-purple-500 to-cyan-400 bg-clip-text text-transparent">
             Velvet Quasar
           </p>
         </NavbarBrand>
