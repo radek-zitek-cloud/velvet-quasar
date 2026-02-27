@@ -1,13 +1,12 @@
 "use client";
 
-import { HeroUIProvider } from "@heroui/react";
-import { ToastProvider } from "@heroui/toast";
+import { Toast } from "@heroui/react";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <HeroUIProvider>
-      <ToastProvider placement="top-right" toastOffset={80} />
+    <>
+      <Toast.Provider placement="top" />
       {children}
-    </HeroUIProvider>
+    </>
   );
 }
