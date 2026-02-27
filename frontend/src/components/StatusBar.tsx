@@ -12,6 +12,7 @@ type HealthData = {
     type: string;
     name: string;
     status: string;
+    alembic_revision: string | null;
   };
 };
 

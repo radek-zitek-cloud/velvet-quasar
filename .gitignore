@@ -19,5 +19,8 @@ node_modules/
 .vscode/
 *.swp
 
+# Data (local SQLite DB)
+data/
+
 # Serena
 .serena/

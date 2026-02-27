@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 LOGS_DIR = PROJECT_ROOT / "logs"
+DATA_DIR = PROJECT_ROOT / "data"
 
 
 class Settings(BaseSettings):
@@ -13,6 +14,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     log_level: str = "debug"
+    database_url: str = f"sqlite+aiosqlite:///{DATA_DIR / 'velvet_quasar.db'}"
 
     model_config = {
         "env_file": str(PROJECT_ROOT / ".env"),

@@ -4,6 +4,7 @@ from importlib.metadata import version, PackageNotFoundError
 from fastapi import APIRouter
 
 from app.config import settings
+from app.database import get_db_info
 
 router = APIRouter()
 
@@ -24,13 +25,11 @@ async def health():
     except PackageNotFoundError:
         app_version = "unknown"
 
+    db_info = await get_db_info()
+
     return {
-        "status": "healthy",
+        "status": "healthy" if db_info["status"] == "healthy" else "degraded",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": app_version,
-        "database": {
-            "type": "postgresql",
-            "name": "velvet_quasar",
-            "status": "healthy",
-        },
+        "database": db_info,
     }

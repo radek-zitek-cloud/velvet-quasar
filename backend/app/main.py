@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.database import run_migrations
 from app.logging_setup import setup_logging
 from app.routes import router
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     setup_logging()
     logger.info("Starting %s (%s)", settings.app_name, settings.app_env)
+    run_migrations()
     yield
     logger.info("Shutting down %s", settings.app_name)
 
