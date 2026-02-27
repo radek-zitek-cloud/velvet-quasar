@@ -4,6 +4,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.logging_setup import setup_logging
@@ -21,6 +22,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 app.include_router(router)
 
 
