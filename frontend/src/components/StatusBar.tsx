@@ -2,6 +2,36 @@
 
 import { useEffect, useState } from "react";
 import { Chip } from "@heroui/react";
+import packageJson from "../../package.json";
+
+type HealthData = {
+  status: string;
+  timestamp: string;
+  version: string;
+  database: {
+    type: string;
+    name: string;
+    status: string;
+  };
+};
+
+function useHealthCheck(intervalMs = 30_000) {
+  const [health, setHealth] = useState<HealthData | null>(null);
+
+  useEffect(() => {
+    const fetchHealth = () => {
+      fetch("http://localhost:8000/health")
+        .then((res) => res.json())
+        .then(setHealth)
+        .catch(() => setHealth(null));
+    };
+    fetchHealth();
+    const id = setInterval(fetchHealth, intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+
+  return health;
+}
 
 function StatusDot({ healthy }: { healthy: boolean }) {
   return (
@@ -13,6 +43,7 @@ function StatusDot({ healthy }: { healthy: boolean }) {
 
 export function StatusBar() {
   const [time, setTime] = useState("");
+  const health = useHealthCheck();
 
   useEffect(() => {
     const update = () => {
@@ -34,15 +65,15 @@ export function StatusBar() {
   return (
     <footer className="shrink-0 flex items-center h-8 px-4 border-t border-border bg-surface text-xs text-fg-secondary gap-4">
       <span className="flex items-center gap-1.5">
-        <Chip size="sm">FE v0.1.0</Chip>
+        <Chip size="sm">FE v{packageJson.version}</Chip>
       </span>
       <span className="flex items-center gap-1.5">
-        <Chip size="sm">BE v0.1.0</Chip>
-        <StatusDot healthy={true} />
+        <Chip size="sm">BE v{health?.version ?? "?"}</Chip>
+        <StatusDot healthy={health?.status === "healthy"} />
       </span>
       <span className="flex items-center gap-1.5">
-        PostgreSQL / velvet_quasar_db
-        <StatusDot healthy={true} />
+        {health?.database?.type ?? "DB"} / {health?.database?.name ?? "unknown"}
+        <StatusDot healthy={health?.database?.status === "healthy"} />
       </span>
 
       <span className="ml-auto flex items-center gap-3">
