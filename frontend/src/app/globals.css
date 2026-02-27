@@ -1,0 +1,14 @@
+@import "tailwindcss";
+@plugin '../hero.ts';
+@source '../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}';
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-sans: var(--font-geist-sans);
+    --font-mono: var(--font-geist-mono);
+}
+
+/* Position toasts inside the main content area, clear header + sidebar */
+[data-placement="top-right"] {
+    right: 8rem !important;
+}
