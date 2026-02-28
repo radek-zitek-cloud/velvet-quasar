@@ -36,6 +36,20 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    # When called programmatically (e.g. from database.run_migrations), a
+    # pre-opened connection is injected via cfg.attributes to avoid creating a
+    # second engine that could hold a SQLite file lock.
+    provided_connection = config.attributes.get("connection", None)
+    if provided_connection is not None:
+        context.configure(
+            connection=provided_connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
