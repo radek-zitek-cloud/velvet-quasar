@@ -1,6 +1,10 @@
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.models import AuditLog
+
+logger = logging.getLogger(__name__)
 
 
 def log_audit(
@@ -19,7 +23,17 @@ def log_audit(
     For create/delete actions, pass a single entry with a summary message
     in new_value/old_value respectively.
     """
+    logger.debug(
+        "log_audit: user_id=%s email=%s action=%s entity_type=%s entity_id=%s changes_count=%d",
+        user_id, user_email, action, entity_type, entity_id, len(changes),
+    )
     for attr_name, old_val, new_val in changes:
+        logger.debug(
+            "log_audit: attr=%s old=%r new=%r",
+            attr_name,
+            old_val[:50] if isinstance(old_val, str) and len(old_val) > 50 else old_val,
+            new_val[:50] if isinstance(new_val, str) and len(new_val) > 50 else new_val,
+        )
         db.add(
             AuditLog(
                 user_id=user_id,
