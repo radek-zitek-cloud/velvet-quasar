@@ -3,13 +3,26 @@
 import { useState } from "react";
 import { ListBox, ListBoxItem } from "@heroui/react";
 import { Icon } from "@iconify/react";
+import { useAuth } from "@/lib/AuthContext";
+import { useNavigation, type PageId } from "@/lib/NavigationContext";
 
 export function NavSidebar() {
+  const { user } = useAuth();
+  const { page, navigate } = useNavigation();
+  const isAdmin = user?.roles.includes("admin") ?? false;
   const [adminOpen, setAdminOpen] = useState(true);
 
   return (
     <div className="flex flex-col gap-1 py-2">
-      <ListBox aria-label="Navigation">
+      <ListBox
+        aria-label="Navigation"
+        selectionMode="single"
+        selectedKeys={new Set([page])}
+        onSelectionChange={(keys) => {
+          const selected = [...keys][0] as PageId | undefined;
+          if (selected) navigate(selected);
+        }}
+      >
         <ListBoxItem id="home" textValue="Home">
           <div className="flex items-center gap-2">
             <Icon icon="lucide:home" width={18} />
@@ -17,19 +30,29 @@ export function NavSidebar() {
           </div>
         </ListBoxItem>
       </ListBox>
-      <button
-        onClick={() => setAdminOpen((v) => !v)}
-        className="flex items-center gap-2 w-full px-3 py-1.5 text-sm font-bold hover:bg-surface-secondary rounded-lg transition-colors"
-      >
-        <Icon
-          icon="lucide:chevron-right"
-          width={16}
-          className={`transition-transform duration-200 ${adminOpen ? "rotate-90" : ""}`}
-        />
-        Administration
-      </button>
-      {adminOpen && (
-        <ListBox aria-label="Administration">
+      {isAdmin && (
+        <button
+          onClick={() => setAdminOpen((v) => !v)}
+          className="flex items-center gap-2 w-full px-3 py-1.5 text-sm font-bold hover:bg-surface-secondary rounded-lg transition-colors"
+        >
+          <Icon
+            icon="lucide:chevron-right"
+            width={16}
+            className={`transition-transform duration-200 ${adminOpen ? "rotate-90" : ""}`}
+          />
+          Administration
+        </button>
+      )}
+      {isAdmin && adminOpen && (
+        <ListBox
+          aria-label="Administration"
+          selectionMode="single"
+          selectedKeys={new Set([page])}
+          onSelectionChange={(keys) => {
+            const selected = [...keys][0] as PageId | undefined;
+            if (selected) navigate(selected);
+          }}
+        >
           <ListBoxItem id="users" textValue="Users">
             <div className="flex items-center gap-2">
               <Icon icon="lucide:users" width={18} />

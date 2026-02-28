@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Chip } from "@heroui/react";
 import packageJson from "../../package.json";
+import { useAuth } from "@/lib/AuthContext";
 
 type HealthData = {
   status: string;
@@ -16,7 +17,7 @@ type HealthData = {
   };
 };
 
-function useHealthCheck(intervalMs = 30_000) {
+function useHealthCheck(intervalMs = 30_000, onTick?: () => void) {
   const [health, setHealth] = useState<HealthData | null>(null);
 
   useEffect(() => {
@@ -25,11 +26,12 @@ function useHealthCheck(intervalMs = 30_000) {
         .then((res) => res.json())
         .then(setHealth)
         .catch(() => setHealth(null));
+      onTick?.();
     };
     fetchHealth();
     const id = setInterval(fetchHealth, intervalMs);
     return () => clearInterval(id);
-  }, [intervalMs]);
+  }, [intervalMs, onTick]);
 
   return health;
 }
@@ -43,8 +45,9 @@ function StatusDot({ healthy }: { healthy: boolean }) {
 }
 
 export function StatusBar() {
+  const { user, refreshUser } = useAuth();
   const [time, setTime] = useState("");
-  const health = useHealthCheck();
+  const health = useHealthCheck(30_000, refreshUser);
 
   useEffect(() => {
     const update = () => {
@@ -79,6 +82,21 @@ export function StatusBar() {
       <span className="flex items-center gap-1.5">
         <Chip size="sm">migration {health?.database?.alembic_revision ?? "?"}</Chip>
       </span>
+
+      {user && (
+        <span className="flex items-center gap-1.5">
+          {user.roles.map((role) => (
+            <Chip
+              key={role}
+              size="sm"
+              color={role === "admin" ? "danger" : role === "user" ? "success" : "accent"}
+              variant="soft"
+            >
+              {role}
+            </Chip>
+          ))}
+        </span>
+      )}
 
       <span className="ml-auto flex items-center gap-3">
         <span>{timezone}</span>

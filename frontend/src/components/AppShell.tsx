@@ -2,19 +2,20 @@
 
 import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
+import { useNavigation } from "@/lib/NavigationContext";
 import { LoginPage } from "./LoginPage";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { NavSidebar } from "./NavSidebar";
 import { UserSidebar } from "./UserSidebar";
 import { StatusBar } from "./StatusBar";
+import { Dashboard } from "./Dashboard";
+import { UsersPage } from "./admin/UsersPage";
+import { RolesPage } from "./admin/RolesPage";
 
-interface AppShellProps {
-  children: React.ReactNode;
-}
-
-export function AppShell({ children }: AppShellProps) {
+export function AppShell() {
   const { user, loading } = useAuth();
+  const { page } = useNavigation();
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
@@ -30,6 +31,20 @@ export function AppShell({ children }: AppShellProps) {
     return <LoginPage />;
   }
 
+  const isAdmin = user.roles.includes("admin");
+
+  let content: React.ReactNode;
+  switch (page) {
+    case "users":
+      content = isAdmin ? <UsersPage /> : <Dashboard />;
+      break;
+    case "roles":
+      content = isAdmin ? <RolesPage /> : <Dashboard />;
+      break;
+    default:
+      content = <Dashboard />;
+  }
+
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       <Header
@@ -42,7 +57,7 @@ export function AppShell({ children }: AppShellProps) {
           <NavSidebar />
         </Sidebar>
 
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-auto p-6">{content}</main>
 
         <Sidebar side="right" collapsed={rightCollapsed}>
           <UserSidebar />

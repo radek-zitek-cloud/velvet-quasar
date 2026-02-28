@@ -36,10 +36,16 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     # Check if email already exists
     result = await db.execute(select(User).where(User.email == body.email))
-    if result.scalar_one_or_none() is not None:
+    existing = result.scalar_one_or_none()
+    if existing is not None:
+        if existing.is_deleted:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f'An account with email "{body.email}" was previously deleted. Please use a different email.',
+            )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
+            detail=f'An account with email "{body.email}" already exists.',
         )
 
     user = User(
@@ -131,10 +137,16 @@ async def update_profile(
     if body.email and body.email != user.email:
         # Check uniqueness
         result = await db.execute(select(User).where(User.email == body.email))
-        if result.scalar_one_or_none() is not None:
+        dup = result.scalar_one_or_none()
+        if dup is not None:
+            if dup.is_deleted:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f'The email "{body.email}" was previously used by a deleted account. Please use a different email.',
+                )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Email already in use",
+                detail=f'The email "{body.email}" is already in use.',
             )
 
     if body.first_name is not None:
