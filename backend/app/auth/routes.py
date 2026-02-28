@@ -16,6 +16,7 @@ from app.auth.schemas import (
     TokenResponse,
     UserResponse,
 )
+from app.audit.service import log_audit
 from app.auth.security import (
     create_access_token,
     create_refresh_token,
@@ -60,6 +61,12 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    log_audit(
+        db, user_id=user.id, user_email=user.email, action="create",
+        entity_type="user", entity_id=user.id,
+        changes=[(None, None, f"User registered: {user.email}")],
+    )
+    await db.commit()
     logger.info("User registered: %s", user.email)
     return _user_to_response(user)
 
@@ -76,7 +83,13 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
             detail="Invalid email or password",
         )
 
+    old_login = str(user.last_login_at) if user.last_login_at else None
     user.last_login_at = datetime.now(timezone.utc)
+    log_audit(
+        db, user_id=user.id, user_email=user.email, action="update",
+        entity_type="user", entity_id=user.id,
+        changes=[("last_login_at", old_login, str(user.last_login_at))],
+    )
     await db.commit()
 
     return TokenResponse(
@@ -149,17 +162,22 @@ async def update_profile(
                 detail=f'The email "{body.email}" is already in use.',
             )
 
-    if body.first_name is not None:
-        user.first_name = body.first_name
-    if body.last_name is not None:
-        user.last_name = body.last_name
-    if body.display_name is not None:
-        user.display_name = body.display_name
-    if body.email is not None:
-        user.email = body.email
+    changes: list[tuple[str | None, str | None, str | None]] = []
+    for field in ("first_name", "last_name", "display_name", "email"):
+        new_val = getattr(body, field)
+        if new_val is not None:
+            old_val = getattr(user, field)
+            if new_val != old_val:
+                changes.append((field, str(old_val), str(new_val)))
+            setattr(user, field, new_val)
 
     user.updated_by = str(user.id)
     user.updated_at = datetime.now(timezone.utc)
+    if changes:
+        log_audit(
+            db, user_id=user.id, user_email=user.email, action="update",
+            entity_type="user", entity_id=user.id, changes=changes,
+        )
     await db.commit()
     await db.refresh(user)
     logger.info("Profile updated: %s", user.email)
@@ -178,10 +196,20 @@ async def change_password(
             detail="Current password is incorrect",
         )
 
+    old_pcr = user.password_change_required
     user.hashed_password = hash_password(body.new_password)
     user.password_change_required = False
     user.updated_by = str(user.id)
     user.updated_at = datetime.now(timezone.utc)
+    changes: list[tuple[str | None, str | None, str | None]] = [
+        ("password", "***", "***"),
+    ]
+    if old_pcr != user.password_change_required:
+        changes.append(("password_change_required", str(old_pcr), str(user.password_change_required)))
+    log_audit(
+        db, user_id=user.id, user_email=user.email, action="update",
+        entity_type="user", entity_id=user.id, changes=changes,
+    )
     await db.commit()
     logger.info("Password changed: %s", user.email)
     return MessageResponse(message="Password changed successfully")

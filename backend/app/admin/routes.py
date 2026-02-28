@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.dependencies import require_admin
+from app.audit.service import log_audit
 from app.admin.models import Role
 from app.admin.schemas import (
     AdminUserCreate,
@@ -74,6 +75,12 @@ async def create_role(
     db.add(role)
     await db.commit()
     await db.refresh(role)
+    log_audit(
+        db, user_id=admin.id, user_email=admin.email, action="create",
+        entity_type="role", entity_id=role.id,
+        changes=[(None, None, f"Role created: {role.name}")],
+    )
+    await db.commit()
     logger.info("Role created: %s by user %s", role.name, admin.id)
     return role
 
@@ -90,6 +97,8 @@ async def update_role(
     if role is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
 
+    changes: list[tuple[str | None, str | None, str | None]] = []
+
     if body.name is not None and body.name != role.name:
         dup_result = await db.execute(select(Role).where(Role.name == body.name))
         dup = dup_result.scalar_one_or_none()
@@ -100,13 +109,20 @@ async def update_role(
                     detail=f'A role named "{body.name}" was previously deleted. Please choose a different name.',
                 )
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f'Role "{body.name}" already exists.')
+        changes.append(("name", role.name, body.name))
         role.name = body.name
 
-    if body.description is not None:
+    if body.description is not None and body.description != role.description:
+        changes.append(("description", role.description, body.description))
         role.description = body.description
 
     role.updated_by = str(admin.id)
     role.updated_at = datetime.now(timezone.utc)
+    if changes:
+        log_audit(
+            db, user_id=admin.id, user_email=admin.email, action="update",
+            entity_type="role", entity_id=role.id, changes=changes,
+        )
     await db.commit()
     await db.refresh(role)
     logger.info("Role updated: %s by user %s", role.name, admin.id)
@@ -128,15 +144,27 @@ async def delete_role(
     role.updated_by = str(admin.id)
     role.updated_at = datetime.now(timezone.utc)
 
+    log_audit(
+        db, user_id=admin.id, user_email=admin.email, action="delete",
+        entity_type="role", entity_id=role.id,
+        changes=[(None, role.name, None)],
+    )
+
     # Remove the deleted role from all users
     users_result = await db.execute(select(User).where(User.is_deleted == False))
     for user in users_result.scalars().all():
         user_roles = parse_roles(user.roles)
         if role.name in user_roles:
+            old_roles = encode_roles(user_roles)
             user_roles.remove(role.name)
             user.roles = encode_roles(user_roles)
             user.updated_at = datetime.now(timezone.utc)
             user.updated_by = str(admin.id)
+            log_audit(
+                db, user_id=admin.id, user_email=admin.email, action="update",
+                entity_type="user", entity_id=user.id,
+                changes=[("roles", old_roles, user.roles)],
+            )
 
     await db.commit()
     await db.refresh(role)
@@ -198,6 +226,12 @@ async def create_user(
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    log_audit(
+        db, user_id=admin.id, user_email=admin.email, action="create",
+        entity_type="user", entity_id=user.id,
+        changes=[(None, None, f"User created: {user.email}")],
+    )
+    await db.commit()
     logger.info("User created by admin: %s (by %s)", user.email, admin.id)
     return _admin_user_response(user)
 
@@ -214,6 +248,8 @@ async def update_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    changes: list[tuple[str | None, str | None, str | None]] = []
+
     if body.email is not None and body.email != user.email:
         dup_result = await db.execute(select(User).where(User.email == body.email))
         dup = dup_result.scalar_one_or_none()
@@ -224,21 +260,30 @@ async def update_user(
                     detail=f'A user with email "{body.email}" was previously deleted. Please use a different email.',
                 )
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f'A user with email "{body.email}" already exists.')
+        changes.append(("email", user.email, body.email))
         user.email = body.email
 
-    if body.first_name is not None:
-        user.first_name = body.first_name
-    if body.last_name is not None:
-        user.last_name = body.last_name
-    if body.display_name is not None:
-        user.display_name = body.display_name
+    for field in ("first_name", "last_name", "display_name"):
+        new_val = getattr(body, field)
+        if new_val is not None and new_val != getattr(user, field):
+            changes.append((field, getattr(user, field), new_val))
+            setattr(user, field, new_val)
+
     if body.password is not None:
         user.hashed_password = hash_password(body.password)
-    if body.password_change_required is not None:
+        changes.append(("password", "***", "***"))
+
+    if body.password_change_required is not None and body.password_change_required != user.password_change_required:
+        changes.append(("password_change_required", str(user.password_change_required), str(body.password_change_required)))
         user.password_change_required = body.password_change_required
 
     user.updated_by = str(admin.id)
     user.updated_at = datetime.now(timezone.utc)
+    if changes:
+        log_audit(
+            db, user_id=admin.id, user_email=admin.email, action="update",
+            entity_type="user", entity_id=user.id, changes=changes,
+        )
     await db.commit()
     await db.refresh(user)
     logger.info("User updated by admin: %s (by %s)", user.email, admin.id)
@@ -259,6 +304,11 @@ async def delete_user(
     user.is_deleted = True
     user.updated_by = str(admin.id)
     user.updated_at = datetime.now(timezone.utc)
+    log_audit(
+        db, user_id=admin.id, user_email=admin.email, action="delete",
+        entity_type="user", entity_id=user.id,
+        changes=[(None, user.email, None)],
+    )
     await db.commit()
     await db.refresh(user)
     logger.info("User soft-deleted by admin: %s (by %s)", user.email, admin.id)
@@ -277,9 +327,15 @@ async def update_user_roles(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    old_roles = user.roles
     user.roles = encode_roles(body.roles)
     user.updated_by = str(admin.id)
     user.updated_at = datetime.now(timezone.utc)
+    log_audit(
+        db, user_id=admin.id, user_email=admin.email, action="update",
+        entity_type="user", entity_id=user.id,
+        changes=[("roles", old_roles, user.roles)],
+    )
     await db.commit()
     await db.refresh(user)
     logger.info("User roles updated by admin: %s -> %s (by %s)", user.email, body.roles, admin.id)

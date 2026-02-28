@@ -10,6 +10,7 @@ from app.config import settings
 from app.database import run_migrations
 from app.logging_setup import setup_logging
 from app.admin.routes import router as admin_router
+from app.audit.routes import router as audit_router
 from app.auth.routes import router as auth_router
 from app.routes import router
 
@@ -35,6 +36,7 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.include_router(audit_router)
 
 
 @app.middleware("http")

@@ -12,6 +12,7 @@ import { StatusBar } from "./StatusBar";
 import { Dashboard } from "./Dashboard";
 import { UsersPage } from "./admin/UsersPage";
 import { RolesPage } from "./admin/RolesPage";
+import { AuditLogPage } from "./admin/AuditLogPage";
 
 export function AppShell() {
   const { user, loading } = useAuth();
@@ -40,6 +41,9 @@ export function AppShell() {
       break;
     case "roles":
       content = isAdmin ? <RolesPage /> : <Dashboard />;
+      break;
+    case "audit-log":
+      content = isAdmin ? <AuditLogPage /> : <Dashboard />;
       break;
     default:
       content = <Dashboard />;

@@ -132,3 +132,42 @@ export async function updateUserRoles(id: number, roles: string[]): Promise<Admi
   });
   return handleResponse<AdminUser>(res);
 }
+
+// ── Audit Log types & API ─────────────────────────────────
+
+export type AuditLogEntry = {
+  id: number;
+  timestamp: string;
+  user_id: number;
+  user_email: string;
+  action: string;
+  entity_type: string;
+  entity_id: number;
+  attribute_name: string | null;
+  old_value: string | null;
+  new_value: string | null;
+};
+
+export type AuditLogPage = {
+  items: AuditLogEntry[];
+  total: number;
+  skip: number;
+  limit: number;
+};
+
+export async function fetchAuditLogs(params: {
+  entity_type?: string;
+  action?: string;
+  search?: string;
+  skip?: number;
+  limit?: number;
+}): Promise<AuditLogPage> {
+  const qs = new URLSearchParams();
+  if (params.entity_type) qs.set("entity_type", params.entity_type);
+  if (params.action) qs.set("action", params.action);
+  if (params.search) qs.set("search", params.search);
+  if (params.skip !== undefined) qs.set("skip", String(params.skip));
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  const res = await fetch(`${API_BASE}/admin/audit-logs?${qs}`, { headers: { ...authHeaders() } });
+  return handleResponse<AuditLogPage>(res);
+}
