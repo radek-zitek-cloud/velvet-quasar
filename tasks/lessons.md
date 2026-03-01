@@ -14,6 +14,12 @@
 - **Pattern**: App uses `sqlite+aiosqlite://` but Alembic runs synchronously. Must strip `+aiosqlite` (or `+asyncpg` for Postgres) when passing URL to Alembic
 - **Rule**: `sync_url = settings.database_url.replace("+aiosqlite", "")` — generalize this if adding Postgres support
 
+## Worktrees share the live database — migrations can run twice
+- **What happened**: Worktree backend pointed to the same `../data/velvet_quasar.db`. An import-time side-effect ran the Alembic migration, creating the `companies` table, but `alembic_version` wasn't updated. Next server start crashed with `table companies already exists`.
+- **Fix (immediate)**: `alembic stamp <revision>` to sync `alembic_version` with reality.
+- **Fix (preventive)**: Write Alembic migrations defensively — wrap `op.create_table()` with `inspect(bind).get_table_names()` checks and column additions with `inspect(bind).get_columns()` checks.
+- **Rule**: Every migration's `upgrade()` should be idempotent: re-running it on an already-migrated DB must be a no-op, not a crash.
+
 ## SQLite + Alembic: enable render_as_batch
 - **Pattern**: SQLite doesn't support `ALTER TABLE` for many operations. Alembic needs `render_as_batch=True` in `context.configure()` to work around this
 - **Rule**: Always set `render_as_batch=True` when SQLite is a target database
