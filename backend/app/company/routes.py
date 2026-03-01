@@ -2,7 +2,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ares.fetcher import fetch_all_registries
@@ -15,13 +15,55 @@ from app.company.schemas import (
     CompanyDirectorResponse,
     CompanyRegistryDataResponse,
     CompanyRelationshipResponse,
+    NaturalPersonCompanyLink,
+    NaturalPersonListItem,
     NaturalPersonResponse,
+    NaturalPersonUpdate,
 )
 from app.company.service import upsert_company
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/company", tags=["company"])
+
+
+async def _build_person_with_companies(person: NaturalPerson, db: AsyncSession) -> NaturalPersonListItem:
+    """Attach linked company info to a NaturalPerson."""
+    dir_result = await db.execute(
+        select(CompanyDirector.ico).where(CompanyDirector.person_id == person.id).distinct()
+    )
+    director_icos = set(dir_result.scalars().all())
+
+    rel_result = await db.execute(
+        select(CompanyRelationship.ico).where(CompanyRelationship.related_person_id == person.id).distinct()
+    )
+    owner_icos = set(rel_result.scalars().all())
+
+    all_icos = director_icos | owner_icos
+
+    companies: list[NaturalPersonCompanyLink] = []
+    for ico in sorted(all_icos):
+        co_result = await db.execute(select(Company).where(Company.ico == ico))
+        co = co_result.scalar_one_or_none()
+        is_dir = ico in director_icos
+        is_own = ico in owner_icos
+        role = "Director & Owner" if is_dir and is_own else "Director" if is_dir else "Owner"
+        companies.append(NaturalPersonCompanyLink(
+            ico=ico,
+            obchodni_jmeno=co.obchodni_jmeno if co else None,
+            role=role,
+        ))
+
+    return NaturalPersonListItem(
+        id=person.id,
+        jmeno=person.jmeno,
+        prijmeni=person.prijmeni,
+        titul_pred=person.titul_pred,
+        titul_za=person.titul_za,
+        datum_narozeni=person.datum_narozeni,
+        statni_obcanstvi=person.statni_obcanstvi,
+        companies=companies,
+    )
 
 
 async def _load_detail(ico: str, db: AsyncSession) -> CompanyDetailResponse:
@@ -147,3 +189,55 @@ async def get_registry_data(
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registry data not found")
     return json.loads(row.raw_json)
+
+
+@router.get("/persons", response_model=list[NaturalPersonListItem])
+async def list_persons(
+    q: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    logger.debug("list_persons: q=%s user=%s", q, current_user.id)
+    stmt = select(NaturalPerson).order_by(NaturalPerson.prijmeni, NaturalPerson.jmeno)
+    if q:
+        like = f"%{q.upper()}%"
+        stmt = stmt.where(
+            (func.upper(NaturalPerson.jmeno).like(like)) |
+            (func.upper(NaturalPerson.prijmeni).like(like))
+        )
+    result = await db.execute(stmt)
+    persons = result.scalars().all()
+    return [await _build_person_with_companies(p, db) for p in persons]
+
+
+@router.get("/persons/{person_id}", response_model=NaturalPersonListItem)
+async def get_person(
+    person_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    logger.debug("get_person: person_id=%s user=%s", person_id, current_user.id)
+    result = await db.execute(select(NaturalPerson).where(NaturalPerson.id == person_id))
+    person = result.scalar_one_or_none()
+    if person is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+    return await _build_person_with_companies(person, db)
+
+
+@router.patch("/persons/{person_id}", response_model=NaturalPersonListItem)
+async def update_person(
+    person_id: int,
+    body: NaturalPersonUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    logger.debug("update_person: person_id=%s user=%s", person_id, current_user.id)
+    result = await db.execute(select(NaturalPerson).where(NaturalPerson.id == person_id))
+    person = result.scalar_one_or_none()
+    if person is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(person, field, value)
+    await db.commit()
+    await db.refresh(person)
+    return await _build_person_with_companies(person, db)
