@@ -14,10 +14,11 @@ import { UsersPage } from "./admin/UsersPage";
 import { RolesPage } from "./admin/RolesPage";
 import { AuditLogPage } from "./admin/AuditLogPage";
 import { CreditCasesPage } from "./credit/CreditCasesPage";
+import { CompanyResearchPage } from "./credit/CompanyResearchPage";
 
 export function AppShell() {
   const { user, loading } = useAuth();
-  const { page } = useNavigation();
+  const { page, pageParams } = useNavigation();
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
@@ -48,6 +49,9 @@ export function AppShell() {
       break;
     case "credit-cases":
       content = <CreditCasesPage />;
+      break;
+    case "company-research":
+      content = <CompanyResearchPage initialIco={pageParams.ico} />;
       break;
     default:
       content = <Dashboard />;

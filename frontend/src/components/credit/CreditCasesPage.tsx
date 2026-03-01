@@ -5,12 +5,14 @@ import { Button, Card, Modal, TextField, Label, Input, TextArea, Form, Separator
 import { Icon } from "@iconify/react";
 import { fetchCreditCases, createCreditCase, updateCreditCase, deleteCreditCase, type CreditCase } from "@/lib/adminApi";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useNavigation } from "@/lib/NavigationContext";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString();
 }
 
 export function CreditCasesPage() {
+  const { navigate } = useNavigation();
   const [cases, setCases] = useState<CreditCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [editCase, setEditCase] = useState<CreditCase | null>(null);
@@ -103,7 +105,7 @@ export function CreditCasesPage() {
                 <th className="px-4 py-3 font-medium">Description</th>
                 <th className="px-4 py-3 font-medium">Created</th>
                 <th className="px-4 py-3 font-medium">Updated</th>
-                <th className="px-4 py-3 font-medium w-24">Actions</th>
+                <th className="px-4 py-3 font-medium w-32">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -122,6 +124,16 @@ export function CreditCasesPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
+                      {c.ico_number && (
+                        <button
+                          onClick={() => navigate("company-research", { ico: c.ico_number! })}
+                          className="p-1.5 rounded hover:bg-accent/10 text-accent transition-colors"
+                          aria-label="Research company"
+                          title="Research company in ARES"
+                        >
+                          <Icon icon="lucide:building-2" width={14} />
+                        </button>
+                      )}
                       <button onClick={() => setEditCase(c)} className="p-1.5 rounded hover:bg-surface-secondary transition-colors" aria-label="Edit">
                         <Icon icon="lucide:pencil" width={14} />
                       </button>

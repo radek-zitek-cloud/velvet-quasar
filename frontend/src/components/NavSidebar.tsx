@@ -58,6 +58,12 @@ export function NavSidebar() {
               Case Management
             </div>
           </ListBoxItem>
+          <ListBoxItem id="company-research" textValue="Company Research">
+            <div className="flex items-center gap-2">
+              <Icon icon="lucide:building-2" width={18} />
+              Company Research
+            </div>
+          </ListBoxItem>
         </ListBox>
       )}
       {isAdmin && (

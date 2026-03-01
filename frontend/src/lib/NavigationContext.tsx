@@ -2,21 +2,26 @@
 
 import { createContext, useContext, useState, useCallback } from "react";
 
-export type PageId = "home" | "users" | "roles" | "audit-log" | "credit-cases";
+export type PageId = "home" | "users" | "roles" | "audit-log" | "credit-cases" | "company-research";
 
 type NavigationState = {
   page: PageId;
-  navigate: (page: PageId) => void;
+  pageParams: Record<string, string>;
+  navigate: (page: PageId, params?: Record<string, string>) => void;
 };
 
 const NavigationContext = createContext<NavigationState | null>(null);
 
 export function NavigationProvider({ children }: { children: React.ReactNode }) {
   const [page, setPage] = useState<PageId>("home");
-  const navigate = useCallback((p: PageId) => setPage(p), []);
+  const [pageParams, setPageParams] = useState<Record<string, string>>({});
+  const navigate = useCallback((p: PageId, params: Record<string, string> = {}) => {
+    setPage(p);
+    setPageParams(params);
+  }, []);
 
   return (
-    <NavigationContext.Provider value={{ page, navigate }}>
+    <NavigationContext.Provider value={{ page, pageParams, navigate }}>
       {children}
     </NavigationContext.Provider>
   );
