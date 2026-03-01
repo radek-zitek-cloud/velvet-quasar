@@ -10,7 +10,7 @@ class AuditLogEntry(BaseModel):
     user_email: str
     action: str
     entity_type: str
-    entity_id: int
+    entity_id: str
     attribute_name: str | None
     old_value: str | None
     new_value: str | None

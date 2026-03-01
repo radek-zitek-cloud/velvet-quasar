@@ -24,6 +24,7 @@ from app.company.schemas import (
     NaturalPersonResponse,
     NaturalPersonUpdate,
 )
+from app.audit.service import log_audit
 from app.company.service import upsert_company
 
 logger = logging.getLogger(__name__)
@@ -302,8 +303,26 @@ async def update_person(
     person = result.scalar_one_or_none()
     if person is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+    changes: list[tuple[str | None, str | None, str | None]] = []
     for field, value in body.model_dump(exclude_unset=True).items():
+        old_val = getattr(person, field)
+        if old_val != value:
+            changes.append((
+                field,
+                str(old_val) if old_val is not None else None,
+                str(value) if value is not None else None,
+            ))
         setattr(person, field, value)
+    if changes:
+        log_audit(
+            db,
+            user_id=current_user.id,
+            user_email=current_user.email,
+            action="update",
+            entity_type="natural_person",
+            entity_id=person.id,
+            changes=changes,
+        )
     await db.commit()
     await db.refresh(person)
     return await _build_person_with_companies(person, db)
@@ -346,6 +365,24 @@ async def merge_person(
     # Delete source person's address rows — re-pointing would violate the "one current address" invariant.
     await db.execute(delete(Address).where(Address.entity_person_id == person_id))
 
+    log_audit(
+        db,
+        user_id=current_user.id,
+        user_email=current_user.email,
+        action="delete",
+        entity_type="natural_person",
+        entity_id=person_id,
+        changes=[(None, f"{src.jmeno} {src.prijmeni} merged into person {canonical_id}", None)],
+    )
+    log_audit(
+        db,
+        user_id=current_user.id,
+        user_email=current_user.email,
+        action="update",
+        entity_type="natural_person",
+        entity_id=canonical_id,
+        changes=[("merged_from", None, f"person {person_id}: {src.jmeno} {src.prijmeni}")],
+    )
     await db.delete(src)
     await db.commit()
     await db.refresh(canon)
@@ -388,6 +425,16 @@ async def refresh_company(
     logger.info("refresh_company: fetching ARES for ico=%s user=%s", ico, current_user.id)
     ares_results = await fetch_all_registries(ico)
     await upsert_company(ico, ares_results, db)
+    log_audit(
+        db,
+        user_id=current_user.id,
+        user_email=current_user.email,
+        action="update",
+        entity_type="company",
+        entity_id=ico,
+        changes=[("ares_refresh", None, "Data refreshed from ARES registries")],
+    )
+    await db.commit()
     return await _load_detail(ico, db)
 
 

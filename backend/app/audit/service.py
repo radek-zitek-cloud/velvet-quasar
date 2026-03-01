@@ -14,7 +14,7 @@ def log_audit(
     user_email: str,
     action: str,
     entity_type: str,
-    entity_id: int,
+    entity_id: int | str,   # widened — accepts ICO strings; existing int callers unchanged
     changes: list[tuple[str | None, str | None, str | None]],
 ) -> None:
     """Add audit log rows to the session (caller must commit).
@@ -23,9 +23,10 @@ def log_audit(
     For create/delete actions, pass a single entry with a summary message
     in new_value/old_value respectively.
     """
+    entity_id_str = str(entity_id)
     logger.debug(
         "log_audit: user_id=%s email=%s action=%s entity_type=%s entity_id=%s changes_count=%d",
-        user_id, user_email, action, entity_type, entity_id, len(changes),
+        user_id, user_email, action, entity_type, entity_id_str, len(changes),
     )
     for attr_name, old_val, new_val in changes:
         logger.debug(
@@ -40,7 +41,7 @@ def log_audit(
                 user_email=user_email,
                 action=action,
                 entity_type=entity_type,
-                entity_id=entity_id,
+                entity_id=entity_id_str,
                 attribute_name=attr_name,
                 old_value=old_val,
                 new_value=new_val,
