@@ -15,6 +15,7 @@ import { RolesPage } from "./admin/RolesPage";
 import { AuditLogPage } from "./admin/AuditLogPage";
 import { CreditCasesPage } from "./credit/CreditCasesPage";
 import { CompanyResearchPage } from "./credit/CompanyResearchPage";
+import { NaturalPersonsPage } from "./credit/NaturalPersonsPage";
 
 export function AppShell() {
   const { user, loading } = useAuth();
@@ -52,6 +53,9 @@ export function AppShell() {
       break;
     case "company-research":
       content = <CompanyResearchPage initialIco={pageParams.ico} />;
+      break;
+    case "natural-persons":
+      content = <NaturalPersonsPage />;
       break;
     default:
       content = <Dashboard />;
