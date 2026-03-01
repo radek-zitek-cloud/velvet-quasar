@@ -31,6 +31,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/company", tags=["company"])
 
 
+def _uf_find(parent: dict[int, int], x: int) -> int:
+    """Path-compressed union-find lookup."""
+    while parent[x] != x:
+        parent[x] = parent[parent[x]]
+        x = parent[x]
+    return x
+
+
+def _uf_union(parent: dict[int, int], x: int, y: int) -> None:
+    parent[_uf_find(parent, x)] = _uf_find(parent, y)
+
+
 async def _build_person_with_companies(person: NaturalPerson, db: AsyncSession) -> NaturalPersonListItem:
     """Attach linked company info to a NaturalPerson."""
     dir_result = await db.execute(
@@ -161,22 +173,54 @@ async def list_person_duplicates(
     result = await db.execute(select(NaturalPerson).order_by(NaturalPerson.prijmeni, NaturalPerson.jmeno))
     all_persons = result.scalars().all()
 
-    groups: dict[tuple, list[NaturalPerson]] = {}
-    for p in all_persons:
-        key = (
-            (p.jmeno or "").strip().upper(),
-            (p.prijmeni or "").strip().upper(),
-            p.datum_narozeni,
-        )
-        groups.setdefault(key, []).append(p)
+    # Build company links upfront — needed for no-DOB matching
+    all_built = [await _build_person_with_companies(p, db) for p in all_persons]
+
+    by_name: dict[tuple, list[NaturalPersonListItem]] = {}
+    for b in all_built:
+        key = ((b.jmeno or "").strip().upper(), (b.prijmeni or "").strip().upper())
+        by_name.setdefault(key, []).append(b)
 
     dup_groups: list[DuplicatePersonGroup] = []
     total_duplicates = 0
-    for members in groups.values():
-        if len(members) > 1:
-            built = [await _build_person_with_companies(p, db) for p in members]
-            dup_groups.append(DuplicatePersonGroup(persons=built))
-            total_duplicates += len(members) - 1
+
+    for name_members in by_name.values():
+        if len(name_members) < 2:
+            continue
+
+        with_dob = [m for m in name_members if m.datum_narozeni is not None]
+        without_dob = [m for m in name_members if m.datum_narozeni is None]
+
+        # Rule 1: same name + same non-null DOB
+        dob_subgroups: dict[str, list[NaturalPersonListItem]] = {}
+        for m in with_dob:
+            dob_subgroups.setdefault(str(m.datum_narozeni), []).append(m)
+        for g in dob_subgroups.values():
+            if len(g) > 1:
+                dup_groups.append(DuplicatePersonGroup(persons=g))
+                total_duplicates += len(g) - 1
+
+        # Rule 2: same name + no DOB + share ≥1 company with another same-name person
+        if without_dob:
+            cos_map = {m.id: {c.ico for c in m.companies} for m in name_members}
+            parent = {m.id: m.id for m in name_members}
+
+            for no_dob in without_dob:
+                shared_icos = cos_map[no_dob.id]
+                if not shared_icos:
+                    continue
+                for other in name_members:
+                    if other.id != no_dob.id and (cos_map[other.id] & shared_icos):
+                        _uf_union(parent, no_dob.id, other.id)
+
+            components: dict[int, list[NaturalPersonListItem]] = {}
+            for m in name_members:
+                components.setdefault(_uf_find(parent, m.id), []).append(m)
+
+            for component in components.values():
+                if any(m.datum_narozeni is None for m in component) and len(component) > 1:
+                    dup_groups.append(DuplicatePersonGroup(persons=component))
+                    total_duplicates += len(component) - 1
 
     return DuplicatePersonsResponse(groups=dup_groups, total_duplicates=total_duplicates)
 
