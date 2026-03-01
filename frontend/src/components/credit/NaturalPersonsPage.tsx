@@ -57,6 +57,7 @@ export function NaturalPersonsPage() {
         datum_narozeni: (fd.get("datum_narozeni") as string).trim() || null,
         statni_obcanstvi: (fd.get("statni_obcanstvi") as string).trim() || null,
       });
+      toast.success("Person updated");
       setEditPerson(null);
       await load();
     } catch (err: unknown) {
@@ -199,7 +200,7 @@ export function NaturalPersonsPage() {
                     </div>
                     <TextField name="datum_narozeni" defaultValue={editPerson.datum_narozeni ?? ""}>
                       <Label>Date of Birth</Label>
-                      <Input placeholder="YYYY-MM-DD" />
+                      <Input type="date" />
                     </TextField>
                     <TextField name="statni_obcanstvi" defaultValue={editPerson.statni_obcanstvi ?? ""}>
                       <Label>Nationality</Label>
