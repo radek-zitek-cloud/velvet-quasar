@@ -25,3 +25,6 @@ data/
 
 # Serena
 .serena/
+
+# Git worktrees
+.worktrees/
