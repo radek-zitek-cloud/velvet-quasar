@@ -2,7 +2,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ares.fetcher import fetch_all_registries
@@ -209,7 +209,7 @@ async def list_person_duplicates(
                 shared_icos = cos_map[no_dob.id]
                 if not shared_icos:
                     continue
-                for other in name_members:
+                for other in without_dob:
                     if other.id != no_dob.id and (cos_map[other.id] & shared_icos):
                         _uf_union(parent, no_dob.id, other.id)
 
@@ -327,10 +327,24 @@ async def merge_person(
     if canon is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Person {canonical_id} not found")
 
-    # Re-point all FK references from src -> canonical
-    await db.execute(update(CompanyDirector).where(CompanyDirector.person_id == person_id).values(person_id=canonical_id))
+    # Re-point all FK references from src -> canonical.
+    # Also sync embedded denormalized fields on CompanyDirector so display stays correct.
+    await db.execute(
+        update(CompanyDirector)
+        .where(CompanyDirector.person_id == person_id)
+        .values(
+            person_id=canonical_id,
+            jmeno=canon.jmeno,
+            prijmeni=canon.prijmeni,
+            titul_pred=canon.titul_pred,
+            titul_za=canon.titul_za,
+            datum_narozeni=canon.datum_narozeni,
+            statni_obcanstvi=canon.statni_obcanstvi,
+        )
+    )
     await db.execute(update(CompanyRelationship).where(CompanyRelationship.related_person_id == person_id).values(related_person_id=canonical_id))
-    await db.execute(update(Address).where(Address.entity_person_id == person_id).values(entity_person_id=canonical_id))
+    # Delete source person's address rows — re-pointing would violate the "one current address" invariant.
+    await db.execute(delete(Address).where(Address.entity_person_id == person_id))
 
     await db.delete(src)
     await db.commit()
