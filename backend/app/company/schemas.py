@@ -133,3 +133,29 @@ class CompanyDetailResponse(CompanyResponse):
     directors: list[CompanyDirectorResponse] = []
     relationships: list[CompanyRelationshipResponse] = []
     addresses: list[AddressResponse] = []
+
+
+class CompanyListItem(BaseModel):
+    ico: str
+    obchodni_jmeno: str | None
+    pravni_forma: str | None
+    datum_zaniku: date | None
+    insolvency_flag: bool
+    last_refreshed_at: datetime | None
+    model_config = {"from_attributes": True}
+
+
+class DuplicatePersonGroup(BaseModel):
+    persons: list[NaturalPersonListItem]
+
+
+class DuplicatePersonsResponse(BaseModel):
+    groups: list[DuplicatePersonGroup]
+    total_duplicates: int  # sum of (len(group) - 1) across all groups
+
+
+class IntegrityReport(BaseModel):
+    broken_director_refs: int
+    broken_relationship_refs: int
+    broken_address_refs: int
+    is_clean: bool

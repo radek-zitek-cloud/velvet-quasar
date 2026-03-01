@@ -2,7 +2,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ares.fetcher import fetch_all_registries
@@ -13,8 +13,12 @@ from app.company.schemas import (
     AddressResponse,
     CompanyDetailResponse,
     CompanyDirectorResponse,
+    CompanyListItem,
     CompanyRegistryDataResponse,
     CompanyRelationshipResponse,
+    DuplicatePersonGroup,
+    DuplicatePersonsResponse,
+    IntegrityReport,
     NaturalPersonCompanyLink,
     NaturalPersonListItem,
     NaturalPersonResponse,
@@ -149,6 +153,66 @@ async def _load_detail(ico: str, db: AsyncSession) -> CompanyDetailResponse:
     )
 
 
+@router.get("/persons/duplicates", response_model=DuplicatePersonsResponse)
+async def list_person_duplicates(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(NaturalPerson).order_by(NaturalPerson.prijmeni, NaturalPerson.jmeno))
+    all_persons = result.scalars().all()
+
+    groups: dict[tuple, list[NaturalPerson]] = {}
+    for p in all_persons:
+        key = (
+            (p.jmeno or "").strip().upper(),
+            (p.prijmeni or "").strip().upper(),
+            p.datum_narozeni,
+        )
+        groups.setdefault(key, []).append(p)
+
+    dup_groups: list[DuplicatePersonGroup] = []
+    total_duplicates = 0
+    for members in groups.values():
+        if len(members) > 1:
+            built = [await _build_person_with_companies(p, db) for p in members]
+            dup_groups.append(DuplicatePersonGroup(persons=built))
+            total_duplicates += len(members) - 1
+
+    return DuplicatePersonsResponse(groups=dup_groups, total_duplicates=total_duplicates)
+
+
+@router.get("/persons/integrity", response_model=IntegrityReport)
+async def get_persons_integrity(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import text
+    broken_dir = (await db.execute(text("""
+        SELECT COUNT(*) FROM company_directors cd
+        LEFT JOIN natural_persons np ON cd.person_id = np.id
+        WHERE cd.person_id IS NOT NULL AND np.id IS NULL
+    """))).scalar_one()
+
+    broken_rel = (await db.execute(text("""
+        SELECT COUNT(*) FROM company_relationships cr
+        LEFT JOIN natural_persons np ON cr.related_person_id = np.id
+        WHERE cr.related_person_id IS NOT NULL AND np.id IS NULL
+    """))).scalar_one()
+
+    broken_addr = (await db.execute(text("""
+        SELECT COUNT(*) FROM addresses a
+        LEFT JOIN natural_persons np ON a.entity_person_id = np.id
+        WHERE a.entity_person_id IS NOT NULL AND np.id IS NULL
+    """))).scalar_one()
+
+    return IntegrityReport(
+        broken_director_refs=broken_dir,
+        broken_relationship_refs=broken_rel,
+        broken_address_refs=broken_addr,
+        is_clean=(broken_dir == 0 and broken_rel == 0 and broken_addr == 0),
+    )
+
+
 @router.get("/persons", response_model=list[NaturalPersonListItem])
 async def list_persons(
     q: str | None = None,
@@ -199,6 +263,52 @@ async def update_person(
     await db.commit()
     await db.refresh(person)
     return await _build_person_with_companies(person, db)
+
+
+@router.post("/persons/{person_id}/merge-into/{canonical_id}", response_model=NaturalPersonListItem)
+async def merge_person(
+    person_id: int,
+    canonical_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if person_id == canonical_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot merge a person into themselves")
+
+    src = (await db.execute(select(NaturalPerson).where(NaturalPerson.id == person_id))).scalar_one_or_none()
+    if src is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Person {person_id} not found")
+
+    canon = (await db.execute(select(NaturalPerson).where(NaturalPerson.id == canonical_id))).scalar_one_or_none()
+    if canon is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Person {canonical_id} not found")
+
+    # Re-point all FK references from src -> canonical
+    await db.execute(update(CompanyDirector).where(CompanyDirector.person_id == person_id).values(person_id=canonical_id))
+    await db.execute(update(CompanyRelationship).where(CompanyRelationship.related_person_id == person_id).values(related_person_id=canonical_id))
+    await db.execute(update(Address).where(Address.entity_person_id == person_id).values(entity_person_id=canonical_id))
+
+    await db.delete(src)
+    await db.commit()
+    await db.refresh(canon)
+    return await _build_person_with_companies(canon, db)
+
+
+@router.get("", response_model=list[CompanyListItem])
+async def list_companies(
+    q: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(Company).order_by(Company.obchodni_jmeno)
+    if q:
+        like = f"%{q.upper()}%"
+        stmt = stmt.where(
+            (func.upper(Company.ico).like(like)) |
+            (func.upper(Company.obchodni_jmeno).like(like))
+        )
+    result = await db.execute(stmt)
+    return [CompanyListItem.model_validate(c) for c in result.scalars().all()]
 
 
 @router.get("/{ico}", response_model=CompanyDetailResponse)
