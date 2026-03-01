@@ -6,8 +6,11 @@ import { Icon } from "@iconify/react";
 import {
   fetchCompany,
   refreshCompany,
+  type CompanyAddress,
   type CompanyDetail,
+  type CompanyDirector,
   type CompanyRegistryData,
+  type CompanyRelationship,
 } from "@/lib/companyApi";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -110,11 +113,7 @@ function CompanyHeader({ company, onRefresh, refreshing }: {
 
 // ─── tab: overview ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ registry }: { registry: CompanyRegistryData[] }) {
-  const root = registry.find(r => r.registry_code === "ROOT");
-  const data = root ? parseJson(root.raw_json) : {};
-  const sidlo = data.sidlo as Record<string, unknown> | undefined;
-
+function OverviewTab({ registry, addresses }: { registry: CompanyRegistryData[]; addresses: CompanyAddress[] }) {
   const subRegs = [
     ["VR", "Commercial Register"],
     ["RES", "Business Register (Stats)"],
@@ -130,23 +129,7 @@ function OverviewTab({ registry }: { registry: CompanyRegistryData[] }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {sidlo && (
-        <Card>
-          <Card.Header><h3 className="font-semibold text-sm">Registered Address</h3></Card.Header>
-          <Card.Content className="pt-0 pb-4 px-4">
-            <p className="text-sm">
-              {[
-                sidlo.nazevUlice,
-                sidlo.cisloDomovni && sidlo.cisloOrientacni
-                  ? `${sidlo.cisloDomovni}/${sidlo.cisloOrientacni}`
-                  : sidlo.cisloDomovni,
-                sidlo.nazevObce,
-                sidlo.psc,
-              ].filter(Boolean).join(", ")}
-            </p>
-          </Card.Content>
-        </Card>
-      )}
+      <AddressHistoryCard addresses={addresses} />
 
       <Card>
         <Card.Header><h3 className="font-semibold text-sm">Registry Membership</h3></Card.Header>
@@ -186,34 +169,107 @@ function OverviewTab({ registry }: { registry: CompanyRegistryData[] }) {
 
 // ─── tab: VR (commercial register) ────────────────────────────────────────────
 
-function VrTab({ registry }: { registry: CompanyRegistryData[] }) {
+function DirectorRow({ d, last }: { d: CompanyDirector; last: boolean }) {
+  const fullName = [d.titul_pred, d.jmeno, d.prijmeni, d.titul_za].filter(Boolean).join(" ")
+    || d.obchodni_jmeno
+    || "—";
+  return (
+    <tr className={!last ? "border-b border-border" : ""}>
+      <td className="px-4 py-2 font-medium">{fullName}</td>
+      <td className="px-4 py-2 text-muted text-sm">{d.funkce ?? "—"}</td>
+      <td className="px-4 py-2 font-mono text-xs">{formatDate(d.vznik_funkce)}</td>
+      <td className="px-4 py-2 font-mono text-xs">
+        {d.zanik_funkce
+          ? formatDate(d.zanik_funkce)
+          : <span className="text-success font-sans font-medium">current</span>
+        }
+      </td>
+      <td className="px-4 py-2 text-xs text-muted">{d.statni_obcanstvi ?? "—"}</td>
+    </tr>
+  );
+}
+
+function OrganGroup({ name, members }: { name: string; members: CompanyDirector[] }) {
+  const [showHistory, setShowHistory] = useState(false);
+  const active = members.filter(d => !d.datum_vymazu);
+  const historical = members.filter(d => !!d.datum_vymazu);
+  const zpusob = members[0]?.zpusob_jednani;
+
+  const tableHead = (
+    <thead>
+      <tr className="border-b border-border text-left text-muted">
+        <th className="px-4 py-2 font-medium text-xs">Name</th>
+        <th className="px-4 py-2 font-medium text-xs">Role</th>
+        <th className="px-4 py-2 font-medium text-xs">From</th>
+        <th className="px-4 py-2 font-medium text-xs">To</th>
+        <th className="px-4 py-2 font-medium text-xs">Nationality</th>
+      </tr>
+    </thead>
+  );
+
+  return (
+    <Card>
+      <Card.Header className="pb-1">
+        <div>
+          <h3 className="font-semibold text-sm">{name}</h3>
+          {zpusob && <p className="text-xs text-muted mt-0.5">{zpusob}</p>}
+        </div>
+      </Card.Header>
+      <Card.Content className="pt-0 pb-0 px-0">
+        {active.length > 0 ? (
+          <table className="w-full text-sm">
+            {tableHead}
+            <tbody>
+              {active.map((d, i) => <DirectorRow key={d.id} d={d} last={i === active.length - 1 && historical.length === 0} />)}
+            </tbody>
+          </table>
+        ) : (
+          <p className="px-4 py-2 text-sm text-muted">No active members.</p>
+        )}
+
+        {historical.length > 0 && (
+          <div className="border-t border-border">
+            <button
+              onClick={() => setShowHistory(h => !h)}
+              className="w-full flex items-center justify-between px-4 py-2 text-xs text-muted hover:text-fg transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <Icon icon="lucide:history" width={13} />
+                {historical.length} historical record{historical.length !== 1 ? "s" : ""}
+              </span>
+              <Icon icon="lucide:chevron-down" width={13} className={`transition-transform ${showHistory ? "rotate-180" : ""}`} />
+            </button>
+            {showHistory && (
+              <table className="w-full text-sm opacity-60">
+                {tableHead}
+                <tbody>
+                  {historical.map((d, i) => <DirectorRow key={d.id} d={d} last={i === historical.length - 1} />)}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </Card.Content>
+    </Card>
+  );
+}
+
+function VrTab({ registry, directors }: { registry: CompanyRegistryData[]; directors: CompanyDirector[] }) {
   const vrRow = registry.find(r => r.registry_code === "VR");
   if (!vrRow || vrRow.http_status !== 200) {
     return <p className="text-sm text-muted py-4">Not registered in the Commercial Register.</p>;
   }
+
   const data = parseJson(vrRow.raw_json);
-  const organs = (data.organy as unknown[] | undefined) ?? [];
   const capital = data.zakladniKapital as Record<string, unknown> | undefined;
 
-  // Flatten members from all organs
-  const members: { name: string; role: string; from: string; to: string }[] = [];
-  for (const organ of organs) {
-    const o = organ as Record<string, unknown>;
-    const clenove = (o.clenove as unknown[] | undefined) ?? [];
-    for (const m of clenove) {
-      const member = m as Record<string, unknown>;
-      const fyzickaOsoba = member.fyzickaOsoba as Record<string, unknown> | undefined;
-      const name = fyzickaOsoba
-        ? `${fyzickaOsoba.jmeno ?? ""} ${fyzickaOsoba.prijmeni ?? ""}`.trim()
-        : (member.obchodniJmeno as string | undefined) ?? "—";
-      members.push({
-        name,
-        role: (o.nazev as string | undefined) ?? "—",
-        from: formatDate((member.clenstviOd as string | undefined) ?? null),
-        to: formatDate((member.clenstviDo as string | undefined) ?? null),
-      });
-    }
-  }
+  // Group directors by organ_name preserving order
+  const organMap = directors.reduce<Map<string, CompanyDirector[]>>((acc, d) => {
+    const key = d.organ_name ?? "Unknown";
+    if (!acc.has(key)) acc.set(key, []);
+    acc.get(key)!.push(d);
+    return acc;
+  }, new Map());
 
   return (
     <div className="flex flex-col gap-4">
@@ -228,36 +284,18 @@ function VrTab({ registry }: { registry: CompanyRegistryData[] }) {
           </Card.Content>
         </Card>
       )}
-      <Card>
-        <Card.Header><h3 className="font-semibold text-sm">Officers &amp; Directors</h3></Card.Header>
-        <Card.Content className="pt-0 pb-0 px-0">
-          {members.length === 0
-            ? <p className="px-4 pb-4 text-sm text-muted">No officer data available.</p>
-            : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted">
-                    <th className="px-4 py-2 font-medium">Name</th>
-                    <th className="px-4 py-2 font-medium">Role</th>
-                    <th className="px-4 py-2 font-medium">From</th>
-                    <th className="px-4 py-2 font-medium">To</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {members.map((m, i) => (
-                    <tr key={i} className={i < members.length - 1 ? "border-b border-border" : ""}>
-                      <td className="px-4 py-2 font-medium">{m.name}</td>
-                      <td className="px-4 py-2 text-muted">{m.role}</td>
-                      <td className="px-4 py-2 font-mono text-xs">{m.from}</td>
-                      <td className="px-4 py-2 font-mono text-xs">{m.to === "—" ? <span className="text-success">current</span> : m.to}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )
-          }
-        </Card.Content>
-      </Card>
+
+      {organMap.size === 0 ? (
+        <Card>
+          <Card.Content className="py-6 text-center">
+            <p className="text-sm text-muted">No director data available. Refresh to fetch.</p>
+          </Card.Content>
+        </Card>
+      ) : (
+        Array.from(organMap.entries()).map(([name, members]) => (
+          <OrganGroup key={name} name={name} members={members} />
+        ))
+      )}
     </div>
   );
 }
@@ -349,15 +387,175 @@ function RawDataTab({ registry }: { registry: CompanyRegistryData[] }) {
   );
 }
 
+// ─── address history card ───────────────────────────────────────────────────────
+
+function AddressHistoryCard({ addresses }: { addresses: CompanyAddress[] }) {
+  const [showHistory, setShowHistory] = useState(false);
+  const current = addresses.filter(a => !a.datum_vymazu);
+  const historical = addresses.filter(a => !!a.datum_vymazu);
+
+  function formatAddress(a: CompanyAddress) {
+    if (a.textova_adresa) return a.textova_adresa;
+    return [a.nazev_ulice, a.cislo_domovni, a.nazev_obce, a.psc].filter(Boolean).join(", ") || "—";
+  }
+
+  if (addresses.length === 0) return null;
+
+  return (
+    <Card>
+      <Card.Header><h3 className="font-semibold text-sm">Registered Address</h3></Card.Header>
+      <Card.Content className="pt-0 pb-3 px-4 flex flex-col gap-1">
+        {current.map(a => (
+          <div key={a.id}>
+            <p className="text-sm">{formatAddress(a)}</p>
+            {a.typ_adresy && <p className="text-xs text-muted">{a.typ_adresy}</p>}
+          </div>
+        ))}
+        {current.length === 0 && <p className="text-sm text-muted">No current address on record.</p>}
+
+        {historical.length > 0 && (
+          <div className="mt-1 border-t border-border pt-1">
+            <button
+              onClick={() => setShowHistory(h => !h)}
+              className="flex items-center gap-1.5 text-xs text-muted hover:text-fg transition-colors py-1"
+            >
+              <Icon icon="lucide:history" width={13} />
+              {historical.length} historical address{historical.length !== 1 ? "es" : ""}
+              <Icon icon="lucide:chevron-down" width={13} className={`transition-transform ${showHistory ? "rotate-180" : ""}`} />
+            </button>
+            {showHistory && historical.map(a => (
+              <div key={a.id} className="py-1 opacity-60 text-sm">
+                <p>{formatAddress(a)}</p>
+                <p className="text-xs text-muted">
+                  {formatDate(a.datum_zapisu)} → {formatDate(a.datum_vymazu)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card.Content>
+    </Card>
+  );
+}
+
+// ─── tab: ownership ─────────────────────────────────────────────────────────────
+
+function OwnershipRow({ rel, last }: { rel: CompanyRelationship; last: boolean }) {
+  const name = rel.person
+    ? [rel.person.titul_pred, rel.person.jmeno, rel.person.prijmeni, rel.person.titul_za].filter(Boolean).join(" ")
+    : rel.related_obchodni_jmeno
+      ? `${rel.related_obchodni_jmeno} (${rel.related_ico})`
+      : rel.related_ico ?? "—";
+
+  const share = rel.podil_hodnota
+    ? rel.podil_typ === "PROCENTA"
+      ? `${rel.podil_hodnota} %`
+      : rel.podil_typ === "ZLOMEK"
+        ? rel.podil_hodnota
+        : rel.podil_hodnota
+    : "—";
+
+  return (
+    <tr className={!last ? "border-b border-border" : ""}>
+      <td className="px-4 py-2 font-medium text-sm">{name}</td>
+      <td className="px-4 py-2 text-sm font-mono">{share}</td>
+      <td className="px-4 py-2 font-mono text-xs">{formatDate(rel.datum_zapisu)}</td>
+      <td className="px-4 py-2 font-mono text-xs">
+        {rel.datum_vymazu
+          ? formatDate(rel.datum_vymazu)
+          : <span className="text-success font-sans font-medium text-xs">current</span>
+        }
+      </td>
+    </tr>
+  );
+}
+
+function OwnershipGroup({ label, relationships }: { label: string; relationships: CompanyRelationship[] }) {
+  const [showHistory, setShowHistory] = useState(false);
+  const active = relationships.filter(r => !r.datum_vymazu);
+  const historical = relationships.filter(r => !!r.datum_vymazu);
+
+  const tableHead = (
+    <thead>
+      <tr className="border-b border-border text-left text-muted">
+        <th className="px-4 py-2 font-medium text-xs">Name</th>
+        <th className="px-4 py-2 font-medium text-xs">Share</th>
+        <th className="px-4 py-2 font-medium text-xs">From</th>
+        <th className="px-4 py-2 font-medium text-xs">To</th>
+      </tr>
+    </thead>
+  );
+
+  return (
+    <Card>
+      <Card.Header className="pb-1">
+        <h3 className="font-semibold text-sm">{label}</h3>
+      </Card.Header>
+      <Card.Content className="pt-0 pb-0 px-0">
+        {active.length > 0 ? (
+          <table className="w-full text-sm">
+            {tableHead}
+            <tbody>
+              {active.map((r, i) => <OwnershipRow key={r.id} rel={r} last={i === active.length - 1 && historical.length === 0} />)}
+            </tbody>
+          </table>
+        ) : (
+          <p className="px-4 py-2 text-sm text-muted">No active records.</p>
+        )}
+
+        {historical.length > 0 && (
+          <div className="border-t border-border">
+            <button
+              onClick={() => setShowHistory(h => !h)}
+              className="w-full flex items-center justify-between px-4 py-2 text-xs text-muted hover:text-fg transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <Icon icon="lucide:history" width={13} />
+                {historical.length} historical record{historical.length !== 1 ? "s" : ""}
+              </span>
+              <Icon icon="lucide:chevron-down" width={13} className={`transition-transform ${showHistory ? "rotate-180" : ""}`} />
+            </button>
+            {showHistory && (
+              <table className="w-full text-sm opacity-60">
+                {tableHead}
+                <tbody>
+                  {historical.map((r, i) => <OwnershipRow key={r.id} rel={r} last={i === historical.length - 1} />)}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </Card.Content>
+    </Card>
+  );
+}
+
+function OwnershipTab({ relationships }: { relationships: CompanyRelationship[] }) {
+  if (relationships.length === 0) {
+    return <p className="text-sm text-muted py-4">No ownership data available. Refresh to fetch.</p>;
+  }
+
+  const spolecnici = relationships.filter(r => r.relationship_type === "SPOLECNIK");
+  const akcionari = relationships.filter(r => r.relationship_type === "AKCIONAR");
+
+  return (
+    <div className="flex flex-col gap-4">
+      {spolecnici.length > 0 && <OwnershipGroup label="Partners / Members (Společníci)" relationships={spolecnici} />}
+      {akcionari.length > 0 && <OwnershipGroup label="Shareholders (Akcionáři)" relationships={akcionari} />}
+    </div>
+  );
+}
+
 // ─── main page ─────────────────────────────────────────────────────────────────
 
-type Tab = "overview" | "vr" | "licenses" | "raw";
+type Tab = "overview" | "vr" | "ownership" | "licenses" | "raw";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: "overview", label: "Overview", icon: "lucide:layout-dashboard" },
-  { id: "vr",       label: "Directors",    icon: "lucide:users" },
-  { id: "licenses", label: "Trade Licenses", icon: "lucide:file-check" },
-  { id: "raw",      label: "Raw Data",    icon: "lucide:code-2" },
+  { id: "overview",  label: "Overview",       icon: "lucide:layout-dashboard" },
+  { id: "vr",        label: "Directors",      icon: "lucide:users" },
+  { id: "ownership", label: "Ownership",      icon: "lucide:landmark" },
+  { id: "licenses",  label: "Trade Licenses", icon: "lucide:file-check" },
+  { id: "raw",       label: "Raw Data",       icon: "lucide:code-2" },
 ];
 
 export function CompanyResearchPage({ initialIco }: { initialIco?: string }) {
@@ -466,8 +664,9 @@ export function CompanyResearchPage({ initialIco }: { initialIco?: string }) {
               ))}
             </div>
 
-            {tab === "overview"  && <OverviewTab  registry={company.registry_data} />}
-            {tab === "vr"        && <VrTab        registry={company.registry_data} />}
+            {tab === "overview"  && <OverviewTab  registry={company.registry_data} addresses={company.addresses} />}
+            {tab === "vr"        && <VrTab        registry={company.registry_data} directors={company.directors} />}
+            {tab === "ownership" && <OwnershipTab relationships={company.relationships} />}
             {tab === "licenses"  && <LicensesTab  registry={company.registry_data} />}
             {tab === "raw"       && <RawDataTab   registry={company.registry_data} />}
           </div>
