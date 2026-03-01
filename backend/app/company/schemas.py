@@ -65,6 +65,36 @@ class NaturalPersonResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class NaturalPersonCompanyLink(BaseModel):
+    ico: str
+    obchodni_jmeno: str | None
+    role: str  # "Director", "Owner", or "Director & Owner"
+
+    model_config = {"from_attributes": True}
+
+
+class NaturalPersonListItem(BaseModel):
+    id: int
+    jmeno: str | None
+    prijmeni: str | None
+    titul_pred: str | None
+    titul_za: str | None
+    datum_narozeni: date | None
+    statni_obcanstvi: str | None
+    companies: list[NaturalPersonCompanyLink] = []
+
+    model_config = {"from_attributes": True}
+
+
+class NaturalPersonUpdate(BaseModel):
+    jmeno: str | None = None
+    prijmeni: str | None = None
+    titul_pred: str | None = None
+    titul_za: str | None = None
+    datum_narozeni: date | None = None
+    statni_obcanstvi: str | None = None
+
+
 class AddressResponse(BaseModel):
     id: int
     typ_adresy: str | None
