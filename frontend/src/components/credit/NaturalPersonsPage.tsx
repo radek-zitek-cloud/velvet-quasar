@@ -3,7 +3,16 @@
 import { useEffect, useState, useCallback } from "react";
 import { Button, Card, Modal, TextField, Label, Input, Form, Separator, toast } from "@heroui/react";
 import { Icon } from "@iconify/react";
-import { fetchPersons, updatePerson, type NaturalPersonListItem } from "@/lib/companyApi";
+import {
+  fetchPersons,
+  fetchPersonDuplicates,
+  fetchPersonIntegrity,
+  mergePersonInto,
+  updatePerson,
+  type DuplicatePersonsResponse,
+  type IntegrityReport,
+  type NaturalPersonListItem,
+} from "@/lib/companyApi";
 import { useNavigation } from "@/lib/NavigationContext";
 
 function formatDate(iso: string | null) {
@@ -23,6 +32,13 @@ export function NaturalPersonsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [editPerson, setEditPerson] = useState<NaturalPersonListItem | null>(null);
+  const [duplicates, setDuplicates] = useState<DuplicatePersonsResponse | null>(null);
+  const [showDuplicates, setShowDuplicates] = useState(false);
+  const [duplicatesLoading, setDuplicatesLoading] = useState(false);
+  const [mergingId, setMergingId] = useState<number | null>(null);
+  const [integrity, setIntegrity] = useState<IntegrityReport | null>(null);
+  const [showIntegrity, setShowIntegrity] = useState(false);
+  const [integrityLoading, setIntegrityLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -35,6 +51,23 @@ export function NaturalPersonsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadDuplicates = useCallback(async () => {
+    setDuplicatesLoading(true);
+    try { setDuplicates(await fetchPersonDuplicates()); }
+    catch (e: unknown) { toast.danger(e instanceof Error ? e.message : "Failed to load duplicates"); }
+    finally { setDuplicatesLoading(false); }
+  }, []);
+
+  const loadIntegrity = useCallback(async () => {
+    setIntegrityLoading(true);
+    try { setIntegrity(await fetchPersonIntegrity()); }
+    catch (e: unknown) { toast.danger(e instanceof Error ? e.message : "Failed to load integrity report"); }
+    finally { setIntegrityLoading(false); }
+  }, []);
+
+  useEffect(() => { loadDuplicates(); }, [loadDuplicates]);
+  useEffect(() => { loadIntegrity(); }, [loadIntegrity]);
 
   const filtered = persons.filter((p) => {
     const q = search.toLowerCase();
@@ -65,6 +98,17 @@ export function NaturalPersonsPage() {
     }
   };
 
+  const handleMerge = async (personId: number, canonicalId: number) => {
+    setMergingId(personId);
+    try {
+      await mergePersonInto(personId, canonicalId);
+      toast.success("Person merged successfully");
+      await Promise.all([load(), loadDuplicates(), loadIntegrity()]);
+    } catch (e: unknown) {
+      toast.danger(e instanceof Error ? e.message : "Failed to merge person");
+    } finally { setMergingId(null); }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -76,9 +120,28 @@ export function NaturalPersonsPage() {
   return (
     <div className="flex flex-col gap-6 max-w-[960px] mx-auto">
       {/* Page header */}
-      <div>
-        <p className="text-sm text-muted font-mono tracking-wide uppercase">Credit Memo</p>
-        <h1 className="text-2xl font-bold tracking-tight mt-1">Natural Persons</h1>
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm text-muted font-mono tracking-wide uppercase">Credit Memo</p>
+          <h1 className="text-2xl font-bold tracking-tight mt-1">Natural Persons</h1>
+        </div>
+        <div className="flex items-center gap-2 mt-1">
+          <Button size="sm" variant={showDuplicates ? "primary" : "secondary"} onPress={() => setShowDuplicates(v => !v)}>
+            <Icon icon="lucide:copy" width={14} />
+            Duplicates
+            {duplicates && duplicates.total_duplicates > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 rounded-full text-xs font-bold bg-danger text-white leading-none">
+                {duplicates.total_duplicates}
+              </span>
+            )}
+          </Button>
+          <Button size="sm" variant={showIntegrity ? "primary" : "secondary"} onPress={() => setShowIntegrity(v => !v)}>
+            {integrity?.is_clean === false
+              ? <Icon icon="lucide:shield-alert" width={14} className="text-warning" />
+              : <Icon icon="lucide:shield-check" width={14} />}
+            Integrity
+          </Button>
+        </div>
       </div>
 
       {/* Search card */}
@@ -105,6 +168,130 @@ export function NaturalPersonsPage() {
           </div>
         </Card.Content>
       </Card>
+
+      {/* Duplicates panel */}
+      {showDuplicates && (
+        <Card>
+          <Card.Header className="pb-2">
+            <div className="flex items-center gap-2">
+              <Icon icon="lucide:copy" width={16} className="text-muted" />
+              <h3 className="font-semibold text-sm">Duplicate Natural Persons</h3>
+              {duplicates && (
+                <span className="text-xs text-muted">
+                  {duplicates.total_duplicates === 0 ? "— no duplicates found"
+                    : `${duplicates.total_duplicates} extra record${duplicates.total_duplicates !== 1 ? "s" : ""} across ${duplicates.groups.length} group${duplicates.groups.length !== 1 ? "s" : ""}`}
+                </span>
+              )}
+              {duplicatesLoading && <div className="animate-spin w-4 h-4 border-2 border-accent border-t-transparent rounded-full ml-auto" />}
+            </div>
+          </Card.Header>
+          <Card.Content className="pt-0">
+            {!duplicates || duplicates.groups.length === 0 ? (
+              <div className="py-4 text-center text-muted flex items-center justify-center gap-2">
+                <Icon icon="lucide:check-circle" width={16} className="text-success" />
+                <span className="text-sm">No duplicate persons detected.</span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {duplicates.groups.map((group, gi) => (
+                  <div key={gi} className="border border-border rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-surface-secondary text-xs font-medium text-muted uppercase tracking-wide">
+                      Group {gi + 1} — {group.persons.length} persons with matching identity
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-left text-muted">
+                          <th className="px-4 py-2 font-medium text-xs">Name</th>
+                          <th className="px-4 py-2 font-medium text-xs">Date of Birth</th>
+                          <th className="px-4 py-2 font-medium text-xs">Companies</th>
+                          <th className="px-4 py-2 font-medium text-xs">Merge Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.persons.map((p, pi) => (
+                          <tr key={p.id} className={pi < group.persons.length - 1 ? "border-b border-border" : ""}>
+                            <td className="px-4 py-2 font-medium">{fullName(p)}</td>
+                            <td className="px-4 py-2 font-mono text-xs text-muted">{formatDate(p.datum_narozeni)}</td>
+                            <td className="px-4 py-2">
+                              <div className="flex flex-wrap gap-1">
+                                {p.companies.length === 0 && <span className="text-muted text-xs">—</span>}
+                                {p.companies.map(c => (
+                                  <span key={c.ico} className="px-1.5 py-0.5 rounded text-xs font-mono bg-accent/10 text-accent">{c.ico}</span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-2">
+                              <div className="flex flex-wrap gap-1">
+                                {group.persons.filter(other => other.id !== p.id).map(other => (
+                                  <Button key={other.id} size="sm" variant="secondary"
+                                    isDisabled={mergingId !== null}
+                                    onPress={() => handleMerge(other.id, p.id)}>
+                                    {mergingId === other.id
+                                      ? <Icon icon="lucide:loader-circle" width={12} className="animate-spin" />
+                                      : <Icon icon="lucide:git-merge" width={12} />}
+                                    Merge #{other.id} → here
+                                  </Button>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card.Content>
+        </Card>
+      )}
+
+      {/* Integrity panel */}
+      {showIntegrity && (
+        <Card>
+          <Card.Header className="pb-2">
+            <div className="flex items-center gap-2">
+              <Icon icon="lucide:database" width={16} className="text-muted" />
+              <h3 className="font-semibold text-sm">Referential Integrity Report</h3>
+            </div>
+          </Card.Header>
+          <Card.Content className="pt-0">
+            {integrityLoading ? (
+              <div className="flex justify-center py-4">
+                <div className="animate-spin w-5 h-5 border-2 border-accent border-t-transparent rounded-full" />
+              </div>
+            ) : !integrity ? (
+              <p className="text-sm text-muted py-2">No data.</p>
+            ) : integrity.is_clean ? (
+              <div className="flex items-center gap-2 py-2 text-success">
+                <Icon icon="lucide:check-circle" width={18} />
+                <span className="text-sm font-medium">All references intact. Database is clean.</span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-warning">
+                  <Icon icon="lucide:alert-triangle" width={16} />
+                  <span className="text-sm font-medium">Broken foreign key references detected:</span>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {([
+                    { label: "Director refs", count: integrity.broken_director_refs, icon: "lucide:users" },
+                    { label: "Relationship refs", count: integrity.broken_relationship_refs, icon: "lucide:landmark" },
+                    { label: "Address refs", count: integrity.broken_address_refs, icon: "lucide:map-pin" },
+                  ] as const).map(({ label, count, icon }) => (
+                    <div key={label} className={`flex flex-col items-center gap-1 p-3 rounded-lg border ${count > 0 ? "border-warning/30 bg-warning/5" : "border-border bg-surface-secondary"}`}>
+                      <Icon icon={icon} width={16} className={count > 0 ? "text-warning" : "text-muted"} />
+                      <span className={`text-xl font-bold ${count > 0 ? "text-warning" : "text-muted"}`}>{count}</span>
+                      <span className="text-xs text-muted text-center">{label}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted">Broken refs indicate orphaned foreign keys. Re-syncing the affected company via ARES refresh will rebuild its references.</p>
+              </div>
+            )}
+          </Card.Content>
+        </Card>
+      )}
 
       {/* Table card */}
       <Card>

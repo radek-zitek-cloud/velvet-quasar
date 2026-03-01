@@ -70,6 +70,31 @@ export type NaturalPersonListItem = {
   companies: NaturalPersonCompanyLink[];
 };
 
+export type CompanyListItem = {
+  ico: string;
+  obchodni_jmeno: string | null;
+  pravni_forma: string | null;
+  datum_zaniku: string | null;
+  insolvency_flag: boolean;
+  last_refreshed_at: string | null;
+};
+
+export type DuplicatePersonGroup = {
+  persons: NaturalPersonListItem[];
+};
+
+export type DuplicatePersonsResponse = {
+  groups: DuplicatePersonGroup[];
+  total_duplicates: number;
+};
+
+export type IntegrityReport = {
+  broken_director_refs: number;
+  broken_relationship_refs: number;
+  broken_address_refs: number;
+  is_clean: boolean;
+};
+
 export type CompanyAddress = {
   id: number;
   typ_adresy: string | null;
@@ -156,4 +181,28 @@ export async function updatePerson(
     body: JSON.stringify(patch),
   });
   return handleResponse<NaturalPersonListItem>(res);
+}
+
+export async function listCompanies(q?: string): Promise<CompanyListItem[]> {
+  const url = q ? `${API_BASE}/company?q=${encodeURIComponent(q)}` : `${API_BASE}/company`;
+  const res = await fetch(url, { headers: { ...authHeaders() } });
+  return handleResponse<CompanyListItem[]>(res);
+}
+
+export async function fetchPersonDuplicates(): Promise<DuplicatePersonsResponse> {
+  const res = await fetch(`${API_BASE}/company/persons/duplicates`, { headers: { ...authHeaders() } });
+  return handleResponse<DuplicatePersonsResponse>(res);
+}
+
+export async function mergePersonInto(personId: number, canonicalId: number): Promise<NaturalPersonListItem> {
+  const res = await fetch(`${API_BASE}/company/persons/${personId}/merge-into/${canonicalId}`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+  });
+  return handleResponse<NaturalPersonListItem>(res);
+}
+
+export async function fetchPersonIntegrity(): Promise<IntegrityReport> {
+  const res = await fetch(`${API_BASE}/company/persons/integrity`, { headers: { ...authHeaders() } });
+  return handleResponse<IntegrityReport>(res);
 }

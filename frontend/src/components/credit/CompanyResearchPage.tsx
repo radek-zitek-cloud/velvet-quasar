@@ -5,10 +5,12 @@ import { Button, Card, toast } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import {
   fetchCompany,
+  listCompanies,
   refreshCompany,
   type CompanyAddress,
   type CompanyDetail,
   type CompanyDirector,
+  type CompanyListItem,
   type CompanyRegistryData,
   type CompanyRelationship,
 } from "@/lib/companyApi";
@@ -564,12 +566,25 @@ export function CompanyResearchPage({ initialIco }: { initialIco?: string }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [companies, setCompanies] = useState<CompanyListItem[]>([]);
+  const [companySearch, setCompanySearch] = useState("");
+  const [companiesLoading, setCompaniesLoading] = useState(false);
 
   // If arriving with a pre-filled ICO, load existing data immediately
   useEffect(() => {
     if (!initialIco) return;
     fetchCompany(initialIco).then(setCompany).catch(() => null);
   }, [initialIco]);
+
+  useEffect(() => {
+    setCompaniesLoading(true);
+    listCompanies().then(setCompanies).catch(() => null).finally(() => setCompaniesLoading(false));
+  }, []);
+
+  const filteredCompanies = companies.filter((c) => {
+    const q = companySearch.toLowerCase();
+    return (c.ico ?? "").toLowerCase().includes(q) || (c.obchodni_jmeno ?? "").toLowerCase().includes(q);
+  });
 
   const handleResearch = async () => {
     if (!ico.trim()) return;
@@ -673,11 +688,74 @@ export function CompanyResearchPage({ initialIco }: { initialIco?: string }) {
         </>
       )}
 
-      {/* Empty state */}
+      {/* Previously researched / empty state */}
       {!company && !loading && (
-        <div className="text-center py-12 text-muted">
-          <Icon icon="lucide:building-2" width={40} className="mx-auto mb-3 opacity-30" />
-          <p className="text-sm">Enter an ICO number to research a Czech company via ARES.</p>
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Previously Researched</h2>
+            <div className="relative">
+              <Icon icon="lucide:search" width={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              <input
+                type="text"
+                value={companySearch}
+                onChange={(e) => setCompanySearch(e.target.value)}
+                placeholder="Filter…"
+                className="pl-7 pr-3 py-1.5 text-xs rounded-lg border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-accent/40"
+              />
+            </div>
+          </div>
+
+          {companiesLoading ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin w-5 h-5 border-2 border-accent border-t-transparent rounded-full" />
+            </div>
+          ) : filteredCompanies.length === 0 ? (
+            <div className="text-center py-10 text-muted">
+              <Icon icon="lucide:building-2" width={36} className="mx-auto mb-2 opacity-30" />
+              <p className="text-sm">{companySearch ? "No matches" : "No companies researched yet. Enter an ICO above."}</p>
+            </div>
+          ) : (
+            <Card>
+              <Card.Content className="p-0">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-muted">
+                      <th className="px-4 py-3 font-medium">Name</th>
+                      <th className="px-4 py-3 font-medium">ICO</th>
+                      <th className="px-4 py-3 font-medium">Legal Form</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium">Last Refreshed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCompanies.map((c, i) => (
+                      <tr
+                        key={c.ico}
+                        className={`cursor-pointer hover:bg-surface-secondary/50 transition-colors ${i < filteredCompanies.length - 1 ? "border-b border-border" : ""}`}
+                        onClick={() => {
+                          setIco(c.ico);
+                          fetchCompany(c.ico)
+                            .then((detail) => { if (detail) { setCompany(detail); setTab("overview"); } })
+                            .catch(() => null);
+                        }}
+                      >
+                        <td className="px-4 py-3 font-medium">{c.obchodni_jmeno ?? <span className="text-muted italic">Unknown</span>}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{c.ico}</td>
+                        <td className="px-4 py-3 text-muted">{c.pravni_forma ?? "—"}</td>
+                        <td className="px-4 py-3">
+                          {c.datum_zaniku
+                            ? <span className="px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger">DISSOLVED</span>
+                            : <span className="px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success">ACTIVE</span>}
+                          {c.insolvency_flag && <span className="ml-1 px-2 py-0.5 rounded text-xs font-medium bg-warning/10 text-warning">INSOLVENT</span>}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted">{timeAgo(c.last_refreshed_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card.Content>
+            </Card>
+          )}
         </div>
       )}
     </div>
