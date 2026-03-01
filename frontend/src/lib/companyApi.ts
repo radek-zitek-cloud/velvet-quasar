@@ -53,6 +53,23 @@ export type NaturalPerson = {
   statni_obcanstvi: string | null;
 };
 
+export type NaturalPersonCompanyLink = {
+  ico: string;
+  obchodni_jmeno: string | null;
+  role: string;
+};
+
+export type NaturalPersonListItem = {
+  id: number;
+  jmeno: string | null;
+  prijmeni: string | null;
+  titul_pred: string | null;
+  titul_za: string | null;
+  datum_narozeni: string | null;
+  statni_obcanstvi: string | null;
+  companies: NaturalPersonCompanyLink[];
+};
+
 export type CompanyAddress = {
   id: number;
   typ_adresy: string | null;
@@ -119,4 +136,24 @@ export async function fetchRegistryData(ico: string, code: string): Promise<Reco
     headers: { ...authHeaders() },
   });
   return handleResponse<Record<string, unknown>>(res);
+}
+
+export async function fetchPersons(q?: string): Promise<NaturalPersonListItem[]> {
+  const url = q
+    ? `${API_BASE}/company/persons?q=${encodeURIComponent(q)}`
+    : `${API_BASE}/company/persons`;
+  const res = await fetch(url, { headers: { ...authHeaders() } });
+  return handleResponse<NaturalPersonListItem[]>(res);
+}
+
+export async function updatePerson(
+  id: number,
+  patch: Partial<Omit<NaturalPersonListItem, "id" | "companies">>
+): Promise<NaturalPersonListItem> {
+  const res = await fetch(`${API_BASE}/company/persons/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(patch),
+  });
+  return handleResponse<NaturalPersonListItem>(res);
 }
