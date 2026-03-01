@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback } from "react";
 
-export type PageId = "home" | "users" | "roles" | "audit-log";
+export type PageId = "home" | "users" | "roles" | "audit-log" | "credit-cases";
 
 type NavigationState = {
   page: PageId;

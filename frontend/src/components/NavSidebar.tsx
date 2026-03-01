@@ -11,6 +11,7 @@ export function NavSidebar() {
   const { page, navigate } = useNavigation();
   const isAdmin = user?.roles.includes("admin") ?? false;
   const [adminOpen, setAdminOpen] = useState(true);
+  const [creditOpen, setCreditOpen] = useState(true);
 
   return (
     <div className="flex flex-col gap-1 py-2">
@@ -30,6 +31,35 @@ export function NavSidebar() {
           </div>
         </ListBoxItem>
       </ListBox>
+      <button
+        onClick={() => setCreditOpen((v) => !v)}
+        className="flex items-center gap-2 w-full px-3 py-1.5 text-sm font-bold hover:bg-surface-secondary rounded-lg transition-colors"
+      >
+        <Icon
+          icon="lucide:chevron-right"
+          width={16}
+          className={`transition-transform duration-200 ${creditOpen ? "rotate-90" : ""}`}
+        />
+        Credit Memo
+      </button>
+      {creditOpen && (
+        <ListBox
+          aria-label="Credit Memo"
+          selectionMode="single"
+          selectedKeys={new Set([page])}
+          onSelectionChange={(keys) => {
+            const selected = [...keys][0] as PageId | undefined;
+            if (selected) navigate(selected);
+          }}
+        >
+          <ListBoxItem id="credit-cases" textValue="Case Management">
+            <div className="flex items-center gap-2">
+              <Icon icon="lucide:briefcase" width={18} />
+              Case Management
+            </div>
+          </ListBoxItem>
+        </ListBox>
+      )}
       {isAdmin && (
         <button
           onClick={() => setAdminOpen((v) => !v)}

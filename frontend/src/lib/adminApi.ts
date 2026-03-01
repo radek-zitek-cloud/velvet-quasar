@@ -155,6 +155,53 @@ export type AuditLogPage = {
   limit: number;
 };
 
+// ── Credit Case types & API ───────────────────────────────
+
+export type CreditCase = {
+  id: number;
+  name: string;
+  description: string;
+  ico_number: string | null;
+  is_deleted: boolean;
+  created_at: string;
+  created_by: string | null;
+  updated_at: string;
+  updated_by: string | null;
+};
+
+export async function fetchCreditCases(): Promise<CreditCase[]> {
+  const res = await fetch(`${API_BASE}/credit/cases`, { headers: { ...authHeaders() } });
+  return handleResponse<CreditCase[]>(res);
+}
+
+export async function createCreditCase(data: { name: string; description: string; ico_number?: string | null }): Promise<CreditCase> {
+  const res = await fetch(`${API_BASE}/credit/cases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(data),
+  });
+  return handleResponse<CreditCase>(res);
+}
+
+export async function updateCreditCase(id: number, data: { name?: string; description?: string; ico_number?: string | null }): Promise<CreditCase> {
+  const res = await fetch(`${API_BASE}/credit/cases/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(data),
+  });
+  return handleResponse<CreditCase>(res);
+}
+
+export async function deleteCreditCase(id: number): Promise<CreditCase> {
+  const res = await fetch(`${API_BASE}/credit/cases/${id}`, {
+    method: "DELETE",
+    headers: { ...authHeaders() },
+  });
+  return handleResponse<CreditCase>(res);
+}
+
+// ── Audit Log types & API ─────────────────────────────────
+
 export async function fetchAuditLogs(params: {
   entity_type?: string;
   action?: string;

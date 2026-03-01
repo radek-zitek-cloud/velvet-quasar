@@ -13,6 +13,7 @@ import { Dashboard } from "./Dashboard";
 import { UsersPage } from "./admin/UsersPage";
 import { RolesPage } from "./admin/RolesPage";
 import { AuditLogPage } from "./admin/AuditLogPage";
+import { CreditCasesPage } from "./credit/CreditCasesPage";
 
 export function AppShell() {
   const { user, loading } = useAuth();
@@ -44,6 +45,9 @@ export function AppShell() {
       break;
     case "audit-log":
       content = isAdmin ? <AuditLogPage /> : <Dashboard />;
+      break;
+    case "credit-cases":
+      content = <CreditCasesPage />;
       break;
     default:
       content = <Dashboard />;

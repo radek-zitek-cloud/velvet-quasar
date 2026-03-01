@@ -9,6 +9,7 @@ from app.models import Base
 from app.auth.models import User  # noqa: F401 — ensure Alembic sees this model
 from app.admin.models import Role  # noqa: F401
 from app.audit.models import AuditLog  # noqa: F401
+from app.credit.models import CreditCase  # noqa: F401
 
 config = context.config
 
