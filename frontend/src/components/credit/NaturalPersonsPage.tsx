@@ -39,6 +39,9 @@ export function NaturalPersonsPage() {
   const [integrity, setIntegrity] = useState<IntegrityReport | null>(null);
   const [showIntegrity, setShowIntegrity] = useState(false);
   const [integrityLoading, setIntegrityLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [canonicalId, setCanonicalId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -77,6 +80,9 @@ export function NaturalPersonsPage() {
     );
   });
 
+  const selectedPersons = persons.filter(p => selectedIds.has(p.id));
+  const allFilteredSelected = filtered.length > 0 && filtered.every(p => selectedIds.has(p.id));
+
   const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!editPerson) return;
@@ -106,6 +112,47 @@ export function NaturalPersonsPage() {
       await Promise.all([load(), loadDuplicates(), loadIntegrity()]);
     } catch (e: unknown) {
       toast.danger(e instanceof Error ? e.message : "Failed to merge person");
+    } finally { setMergingId(null); }
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds(prev => { const next = new Set(prev); filtered.forEach(p => next.delete(p.id)); return next; });
+    } else {
+      setSelectedIds(prev => new Set([...prev, ...filtered.map(p => p.id)]));
+    }
+  };
+
+  const openMergeDialog = () => {
+    // Default canonical: person with the most company links (most accumulated data)
+    const best = selectedPersons.reduce((a, b) => b.companies.length >= a.companies.length ? b : a, selectedPersons[0]);
+    setCanonicalId(best?.id ?? null);
+    setMergeDialogOpen(true);
+  };
+
+  const handleMergeSelected = async () => {
+    if (!canonicalId) return;
+    const toMerge = [...selectedIds].filter(id => id !== canonicalId);
+    setMergingId(toMerge[0] ?? null);
+    try {
+      for (const id of toMerge) {
+        await mergePersonInto(id, canonicalId);
+      }
+      toast.success(`Merged ${toMerge.length} person${toMerge.length !== 1 ? "s" : ""} successfully`);
+      setSelectedIds(new Set());
+      setMergeDialogOpen(false);
+      setCanonicalId(null);
+      await Promise.all([load(), loadDuplicates(), loadIntegrity()]);
+    } catch (e: unknown) {
+      toast.danger(e instanceof Error ? e.message : "Failed to merge persons");
     } finally { setMergingId(null); }
   };
 
@@ -166,6 +213,21 @@ export function NaturalPersonsPage() {
               </button>
             )}
           </div>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 mt-3 pt-3 border-t border-border">
+              <span className="text-xs text-muted">{selectedIds.size} person{selectedIds.size !== 1 ? "s" : ""} selected</span>
+              <Button size="sm" onPress={openMergeDialog} isDisabled={selectedIds.size < 2}>
+                <Icon icon="lucide:git-merge" width={14} />
+                Merge selected
+              </Button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="text-xs text-muted hover:text-fg transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </Card.Content>
       </Card>
 
@@ -299,6 +361,15 @@ export function NaturalPersonsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-muted">
+                <th className="px-3 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={toggleSelectAll}
+                    className="cursor-pointer"
+                    title={allFilteredSelected ? "Deselect all" : "Select all"}
+                  />
+                </th>
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Date of Birth</th>
                 <th className="px-4 py-3 font-medium">Nationality</th>
@@ -308,7 +379,15 @@ export function NaturalPersonsPage() {
             </thead>
             <tbody>
               {filtered.map((p, i) => (
-                <tr key={p.id} className={i < filtered.length - 1 ? "border-b border-border" : ""}>
+                <tr key={p.id} className={`${i < filtered.length - 1 ? "border-b border-border" : ""} ${selectedIds.has(p.id) ? "bg-accent/5" : ""}`}>
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(p.id)}
+                      onChange={() => toggleSelect(p.id)}
+                      className="cursor-pointer"
+                    />
+                  </td>
                   <td className="px-4 py-3 font-medium">{fullName(p)}</td>
                   <td className="px-4 py-3 text-xs text-muted font-mono">{formatDate(p.datum_narozeni)}</td>
                   <td className="px-4 py-3 text-fg-secondary">{p.statni_obcanstvi ?? <span className="text-muted">—</span>}</td>
@@ -343,7 +422,7 @@ export function NaturalPersonsPage() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
                     {search ? "No persons match your search" : "No natural persons found"}
                   </td>
                 </tr>
@@ -427,6 +506,71 @@ export function NaturalPersonsPage() {
               <Modal.Footer>
                 <Button variant="secondary" slot="close">Cancel</Button>
                 <Button type="submit" form="edit-person-form">Save</Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
+      {/* Merge Dialog */}
+      <Modal isOpen={mergeDialogOpen} onOpenChange={(open) => { if (!open) { setMergeDialogOpen(false); setCanonicalId(null); } }}>
+        <Modal.Backdrop>
+          <Modal.Container>
+            <Modal.Dialog className="sm:max-w-[560px]">
+              <Modal.CloseTrigger />
+              <Modal.Header>
+                <Modal.Heading>Merge {selectedPersons.length} Persons</Modal.Heading>
+              </Modal.Header>
+              <Modal.Body>
+                <p className="text-sm text-muted mb-4">
+                  Select which record to keep. All other records will have their company links re-pointed here, then be deleted.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {selectedPersons.map((p) => (
+                    <label
+                      key={p.id}
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                        canonicalId === p.id ? "border-accent bg-accent/5" : "border-border hover:bg-surface-secondary"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="canonical"
+                        checked={canonicalId === p.id}
+                        onChange={() => setCanonicalId(p.id)}
+                        className="mt-0.5 cursor-pointer"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-sm">{fullName(p)}</p>
+                          {canonicalId === p.id && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-accent/10 text-accent font-medium">keep</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted font-mono mt-0.5">{formatDate(p.datum_narozeni)} · #{p.id}</p>
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {p.companies.map(c => (
+                            <span key={c.ico} className="px-1.5 py-0.5 rounded text-xs font-mono bg-accent/10 text-accent">{c.ico}</span>
+                          ))}
+                          {p.companies.length === 0 && <span className="text-xs text-muted italic">No companies</span>}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                {canonicalId !== null && selectedPersons.length > 1 && (
+                  <p className="mt-3 text-xs text-muted">
+                    {selectedPersons.length - 1} record{selectedPersons.length - 1 !== 1 ? "s" : ""} will be deleted after their company links are re-pointed.
+                  </p>
+                )}
+              </Modal.Body>
+              <Modal.Footer>
+                <Button variant="secondary" slot="close">Cancel</Button>
+                <Button onPress={handleMergeSelected} isDisabled={!canonicalId || mergingId !== null}>
+                  {mergingId !== null
+                    ? <><Icon icon="lucide:loader-circle" width={14} className="animate-spin" /> Merging…</>
+                    : <>Merge {selectedPersons.filter(p => p.id !== canonicalId).length} into selected</>
+                  }
+                </Button>
               </Modal.Footer>
             </Modal.Dialog>
           </Modal.Container>
